@@ -38,7 +38,7 @@ impl<'a> Deref for ClientGuard<'a> {
 	}
 }
 
-pub type ExpectFn<'a> = Box<dyn (Fn(&mut reqwest::Response) -> CheckResult) + 'a>;
+pub type ExpectFn<'a> = Box<dyn (Fn(&mut reqwest::Response) -> CheckResult) + Send + Sync + 'a>;
 
 /// Performs a http check. Redirects are not followed.
 ///
