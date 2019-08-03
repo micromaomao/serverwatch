@@ -206,7 +206,12 @@ fn cert_checker_test() {
 
   // Test for adding CA
   let mut chk = CertificateChecker::builder("superfish.badssl.com".to_owned(), 443);
-  chk.clone().build().unwrap().check().expect_err();
+  chk.clone().build().unwrap().check().expect_err_contains("unable to get local issuer certificate");
   chk.set_trusted_CAs(vec![openssl::x509::X509::from_der(include_bytes!("./tls_test_badssl_superfish.der")).unwrap()]);
   chk.build().unwrap().check().expect();
+
+  // When a CA is added, don't trust other CAs.
+  let mut chk = CertificateChecker::builder("google.com".to_owned(), 443);
+  chk.set_trusted_CAs(vec![openssl::x509::X509::from_der(include_bytes!("./tls_test_badssl_superfish.der")).unwrap()]);
+  chk.build().unwrap().check().expect_err_contains("unable to get local issuer certificate");
 }
