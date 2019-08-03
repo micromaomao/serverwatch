@@ -53,7 +53,7 @@ pub type ExpectFn<'a> = Box<dyn (Fn(&mut reqwest::Response) -> CheckResult) + 'a
 pub struct HttpChecker<'a> {
 	url: reqwest::Url,
 	expects: Vec<ExpectFn<'a>>,
-	unstable_timeout: time::Duration,
+	warn_timeout: time::Duration,
 	err_timeout: time::Duration,
 }
 
@@ -61,7 +61,7 @@ impl<'a> HttpChecker<'a> {
 	pub fn new(url: &str) -> Result<Self, reqwest::UrlError> {
 		acquire_client();
 		let parsed_url = reqwest::Url::parse(url)?;
-		Ok(HttpChecker{url: parsed_url, expects: Vec::new(), unstable_timeout: time::Duration::from_secs(30), err_timeout: time::Duration::from_secs(30)})
+		Ok(HttpChecker{url: parsed_url, expects: Vec::new(), warn_timeout: time::Duration::from_secs(30), err_timeout: time::Duration::from_secs(30)})
 	}
 
 	/// Make sure the server response specifies certain condition&hellip;
@@ -101,7 +101,7 @@ impl<'a> HttpChecker<'a> {
 		}))
 	}
 
-	/// Add a test so that if the response does not contains the string `find`, check returns ERROR.
+	/// Add a test so that if the response does not contains the string `find`, check returns `ERROR`.
 	pub fn expect_response_contains(&mut self, find: &'a str) -> &mut Self {
 		self.expect(Box::new(move |res| {
 			let text = match res.text() {
@@ -118,19 +118,19 @@ impl<'a> HttpChecker<'a> {
 
 	/// Set a time limit for the request.
 	///
-	/// * If the response arrives within `unstable`, check result is `UP`.
-	/// * If the response arrives after `unstable` but before `error`, check result is `UNSTABLE` with the
+	/// * If the response arrives within `warn`, check result is `UP`.
+	/// * If the response arrives after `warn` but before `error`, check result is `WARN` with the
 	///   message including something like `server took ??ms to response.`.
 	/// * Otherwise, result is `ERROR`.
 	///
 	/// ## Panics
 	///
-	/// Panics if `unstable` is longer than `error`.
-	pub fn set_timeouts(&mut self, unstable: time::Duration, error: time::Duration) -> &mut Self {
-		if unstable > error {
-			panic!("unstable > error");
+	/// Panics if `warn` is longer than `error`.
+	pub fn set_timeouts(&mut self, warn: time::Duration, error: time::Duration) -> &mut Self {
+		if warn > error {
+			panic!("warn > error");
 		}
-		self.unstable_timeout = unstable;
+		self.warn_timeout = warn;
 		self.err_timeout = error;
 		self
 	}
@@ -185,7 +185,7 @@ fn should_timeout() {
 	let mut checker = HttpChecker::new("https://www.google.com").unwrap();
 	checker.set_timeouts(time::Duration::from_millis(1), time::Duration::from_millis(5000));
 	let check_res = checker.check();
-	assert_eq!(check_res.result_type, CheckResultType::UNSTABLE);
+	assert_eq!(check_res.result_type, CheckResultType::WARN);
 	if check_res.info.as_ref().unwrap().find("Server took").is_none() {
 		panic!("Info returned is {:?}, which does not include {:?}.", check_res.info, "Server took");
 	}
@@ -206,16 +206,16 @@ impl<'a> Checker for HttpChecker<'a> {
 			let time_used = start.elapsed();
 			match res {
 				Ok(mut response) => {
-					let mut unstable_results = Vec::new();
-					if time_used > self.unstable_timeout {
-						unstable_results.push(CheckResult::unstable(Some(format!("Server took {}ms to response.", time_used.as_millis()))));
+					let mut warn_results = Vec::new();
+					if time_used > self.warn_timeout {
+						warn_results.push(CheckResult::warn(Some(format!("Server took {}ms to response.", time_used.as_millis()))));
 					}
 					let mut infos = Vec::new();
 					for check_fn in self.expects.iter() {
 						let check_res = (*check_fn)(&mut response);
 						match check_res.result_type {
 							CheckResultType::ERROR => { return check_res },
-							CheckResultType::UNSTABLE => { unstable_results.push(check_res) },
+							CheckResultType::WARN => { warn_results.push(check_res) },
 							CheckResultType::UP => {
 								if let Some(info) = check_res.info {
 									infos.push(info);
@@ -223,11 +223,11 @@ impl<'a> Checker for HttpChecker<'a> {
 							}
 						}
 					}
-					if unstable_results.len() > 0 {
+					if warn_results.len() > 0 {
 						let mut f = String::new();
-						write!(f, "{} expect checks reported UNSTABLE: ", unstable_results.len()).unwrap();
+						write!(f, "{} expect checks reported WARN: ", warn_results.len()).unwrap();
 						let mut is_first = true;
-						for usr in unstable_results.iter() {
+						for usr in warn_results.iter() {
 							if !is_first {
 								write!(f, ", ").unwrap();
 							}
@@ -238,7 +238,7 @@ impl<'a> Checker for HttpChecker<'a> {
 								write!(f, "(no info)").unwrap();
 							}
 						}
-						CheckResult::unstable(Some(f))
+						CheckResult::warn(Some(f))
 					} else {
 						if infos.len() > 0 {
 							CheckResult::up(Some(infos.join("\n")))

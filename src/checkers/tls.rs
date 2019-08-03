@@ -49,7 +49,7 @@ impl CertificateCheckerBuilder {
   /// Set the [`CheckResultType`](crate::checkers::CheckResultType) returned when
   /// the certificate is about to expire, as determined by `exipry_threshold`.
   ///
-  /// Defaults to `UNSTABLE`.
+  /// Defaults to `WARN`.
   ///
   /// Other errors, such as unable to connect to the server, returns `ERROR`
   /// regardless of this setting.
@@ -62,7 +62,7 @@ impl CertificateCheckerBuilder {
   /// If the server certificate will expire within the duration, as of the time
   /// of the check (or
   /// [`fake_time`](crate::checkers::tls::CertificateCheckerBuilder::fake_time)),
-  /// the check will fail with self.failure_mode, which defaults to `UNSTABLE`.
+  /// the check will fail with self.failure_mode, which defaults to `WARN`.
   ///
   /// Defaults to 2 days. Increase this to make the check stricter.
   pub fn set_expiry_threshold(&mut self, value: time::Duration) {
@@ -107,7 +107,7 @@ impl CertificateChecker {
   pub fn builder(host: String, port: u16) -> CertificateCheckerBuilder {
     CertificateCheckerBuilder{
       host, port,
-      failure_mode: CheckResultType::UNSTABLE,
+      failure_mode: CheckResultType::WARN,
       exipry_threshold: time::Duration::from_secs(2*24*60*60),
       roots: CertificateCheckerRootOptions::OpensslDefault,
       fake_now: None,
@@ -202,5 +202,5 @@ fn cert_checker_test() {
 
   // About to expire
   chk.fake_time(not_after - 1*one_hour);
-  assert_eq!(chk.clone().build().unwrap().check().result_type, CheckResultType::UNSTABLE);
+  assert_eq!(chk.clone().build().unwrap().check().result_type, CheckResultType::WARN);
 }

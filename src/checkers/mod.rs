@@ -7,8 +7,8 @@ use std::fmt;
 
 /// A `Checker` performs some server check, for example by making an http request
 /// and expecting 200. The checker may also time the request and return with an
-/// [`UNSTABLE`](crate::checkers::CheckResultType::UNSTABLE) result if the server
-/// took too long to response, etc.
+/// [`warn`](crate::checkers::CheckResultType::WARN) result if the server took
+/// too long to response, etc.
 pub trait Checker {
 	/// Performs the check.
 	fn check(&mut self) -> CheckResult;
@@ -27,7 +27,7 @@ pub enum CheckResultType {
   /// <span style="color: green">Everything's good.</span>
   UP,
   /// <span style="color: darkorange">Something's not right.</span>
-  UNSTABLE,
+  WARN,
   /// <span style="color: red">Everything is wrong.</span>
   ERROR
 }
@@ -41,9 +41,9 @@ impl CheckResult {
   pub fn error(info: Option<String>) -> Self {
     CheckResult{result_type: CheckResultType::ERROR, info}
   }
-  /// Construct an `UNSTABLE` result.
-  pub fn unstable(info: Option<String>) -> Self {
-    CheckResult{result_type: CheckResultType::UNSTABLE, info}
+  /// Construct an `WARN` result.
+  pub fn warn(info: Option<String>) -> Self {
+    CheckResult{result_type: CheckResultType::WARN, info}
   }
 
   pub fn expect(&self) {
