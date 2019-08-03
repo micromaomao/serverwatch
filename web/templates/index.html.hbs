@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+		<link rel="stylesheet" href="/style.css">
+	</head>
+	<body>
+		<ul>
+			{{#each checks}}
+				<li class="check check_{{last_state}}">
+					<div class="desc">{{desc}}</div>
+					<div class="logs">
+						{{#each log}}
+							<span class="state_block state_{{state}}" title="{{secs_ago}} seconds ago: {{info}}"></span>
+						{{/each}}
+					</div>
+					{{!-- <div class="details">details</div> --}}
+				</li>
+			{{/each}}
+		</ul>
+	</body>
+</html>
