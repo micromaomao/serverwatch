@@ -15,7 +15,7 @@ pub trait Checker {
 }
 
 /// The result of a check, along with some additional information, if available.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct CheckResult {
   pub result_type: CheckResultType,
   /// optional information, which may be displayed by the [`check()`](crate::checkers::Checker::check) caller.

@@ -5,3 +5,4 @@ extern crate lazy_static;
 
 pub mod checkers;
 pub mod utils;
+pub mod scheduler;
