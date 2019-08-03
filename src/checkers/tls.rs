@@ -203,4 +203,10 @@ fn cert_checker_test() {
   // About to expire
   chk.fake_time(not_after - 1*one_hour);
   assert_eq!(chk.clone().build().unwrap().check().result_type, CheckResultType::WARN);
+
+  // Test for adding CA
+  let mut chk = CertificateChecker::builder("superfish.badssl.com".to_owned(), 443);
+  chk.clone().build().unwrap().check().expect_err();
+  chk.set_trusted_CAs(vec![openssl::x509::X509::from_der(include_bytes!("./tls_test_badssl_superfish.der")).unwrap()]);
+  chk.build().unwrap().check().expect();
 }
