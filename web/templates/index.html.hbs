@@ -4,6 +4,7 @@
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1">
 		<link rel="stylesheet" href="/style.css">
+		<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
 	</head>
 	<body>
 		<ul>
@@ -12,12 +13,23 @@
 					<div class="desc">{{desc}}</div>
 					<div class="logs">
 						{{#each log}}
-							<span class="state_block state_{{state}}" title="{{secs_ago}} seconds ago: {{info}}"></span>
+							<a href="#e_{{cssid}}" class="state_block state_{{state}}">{{state_material_icon}}</a>
 						{{/each}}
 					</div>
-					{{!-- <div class="details">details</div> --}}
+					<div class="details">
+						<ul>
+							{{#each log}}
+								<li id="e_{{cssid}}" class="detail detail_{{state}}">
+									<div class="padding">
+										<span class="timestamp" data-time="{{time}}">{{time}}</span>: <code>{{state_upper_case}}</code> <code>{{info}}</code>
+									</div>
+								</li>
+							{{/each}}
+						</ul>
+					</div>
 				</li>
 			{{/each}}
 		</ul>
+		<script src="/script.js"></script>
 	</body>
 </html>

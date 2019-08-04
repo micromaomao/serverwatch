@@ -1,6 +1,25 @@
+$color-green: #3CA83C
+$color-light-green: #C4E4C4
+$color-orange: #E57248
+$color-light-orange: #F8DBD1
+$color-red: #A83C3C
+$color-light-red: #FDC2C2
+
+.material_icon
+	font-family: 'Material Icons'
+	font-weight: normal
+	font-style: normal
+	text-transform: none
+	direction: ltr
+	white-space: nowrap
+	-webkit-font-smoothing: antialiased
+	text-rendering: optimizeLegibility
+	-moz-osx-font-smoothing: grayscale
+	font-feature-settings: 'liga'
+
 body
 	font-family: sans-serif;
-	background-color: #fafafa;
+	background-color: white;
 
 body > ul
 	margin: 0
@@ -27,20 +46,18 @@ body > ul
 		&.check_null
 			opacity: 0.8
 		&.check_up
-			@include stub(forestgreen)
+			@include stub($color-green)
 		&.check_error
-			@include stub(crimson)
+			@include stub($color-red)
 		&.check_warn
-			@include stub(coral)
+			@include stub($color-orange)
 		display: grid
 		grid-template-columns: $left-width auto
 		grid-template-rows: auto
-		// grid-template-areas: "desc logs" "details details"
-		grid-template-areas: "desc logs"
+		grid-template-areas: "desc logs" "details details"
 		> .desc
 			grid-area: desc
 			font-weight: bold
-			// padding: 1rem 1rem 0.5rem 1rem
 			padding: 1rem
 			justify-self: stretch
 			align-self: center
@@ -48,7 +65,7 @@ body > ul
 			grid-area: logs
 			overflow: hidden
 			justify-self: left
-			align-self: center
+			align-self: stretch
 			max-width: 100%
 			display: flex
 			flex-wrap: nowrap
@@ -60,20 +77,62 @@ body > ul
 				display: flex
 				justify-content: center
 				align-items: center
-				width: 1.5rem
-				height: 1.5rem
+				max-width: 2rem
+				font-size: 1.5rem
+				padding: 0 0.5rem
 				color: white
+				text-decoration: none
+				cursor: pointer
+				@mixin col($a, $b)
+					@extend .material_icon
+					$c: lighten($a, 10%)
+					border-left: 1px solid $c
+					border-top: 1px solid $c
+					border-bottom: 1px solid $c
+					&:last-child
+						border-right: 1px solid $c
+					background-color: $b
+					color: $a
+					&:hover
+						background-color: $a
+						color: white
 				&.state_up
-					background-color: forestgreen
+					@include col($color-green, $color-light-green)
 				&.state_error
-					background-color: crimson
+					@include col($color-red, $color-light-red)
 				&.state_warn
-					background-color: coral
-				transition: opacity 200ms
-				&:hover
-					opacity: 0.8
-		// > .details
-		// 	grid-area: details
-		// 	padding: 0.5rem 1rem 1rem 1rem
-		// 	justify-self: stretch
-		// 	align-self: start
+					@include col($color-orange, $color-light-orange)
+				transition: background-color 200ms, color 200ms
+		> .details
+			grid-area: details
+			padding: 0
+			justify-self: stretch
+			align-self: start
+			> ul
+				padding: 0
+				margin: 0
+				list-style-type: none
+				> li
+					display: none
+					height: 0
+					overflow: hidden
+					box-sizing: border-box
+					margin: 0
+					padding: 0
+					> .padding
+						padding: 0.5rem 1rem
+					transition: height 200ms, opacity 200ms
+					&.detail:target
+						display: block
+						height: auto
+					&.detail_up
+						color: $color-green
+					&.detail_warn
+						color: $color-orange
+					&.detail_error
+						color: $color-red
+				font-size: 1rem
+				code
+					font-size: 1rem
+					margin-left: 0.5rem
+					margin-right: 0.5rem

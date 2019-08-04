@@ -6,6 +6,11 @@ fn style_css() -> Content<&'static str> {
   Content(ContentType::CSS, include_str!(concat!(env!("OUT_DIR"), "/style.css")))
 }
 
+#[get("/script.js")]
+fn script_js() -> Content<&'static str> {
+  Content(ContentType::JavaScript, include_str!("assets/script.js"))
+}
+
 use super::api::get_status_log_response_struct;
 use rocket_contrib::templates::Template;
 use rocket::State;
@@ -17,5 +22,5 @@ fn index(sw_state: State<SwState>) -> Template {
 }
 
 pub fn pages_routes() -> impl Into<Vec<rocket::Route>> {
-  routes![style_css, index]
+  routes![style_css, script_js, index]
 }
