@@ -28,7 +28,7 @@ pub fn get_checks() -> Vec<Check> {
         }
         Box::new(c)
       },
-      min_check_interval: Duration::from_secs(15)
+      min_check_interval: Duration::from_secs(30)
     });
     list.push(Check{
       desc: s_string(format!("TLS {}", domain)),
@@ -37,8 +37,19 @@ pub fn get_checks() -> Vec<Check> {
         c.set_expiry_threshold(Duration::from_secs(20*24*60*60)); // 20 days
         Box::new(c.build().unwrap())
       },
-      min_check_interval: Duration::from_secs(60)
+      min_check_interval: Duration::from_secs(60*10)
     });
   }
+  list.push(Check{
+    desc: "https://paper.sc/search/?as=json&query=test",
+    checker: {
+      let mut c = HttpChecker::new("https://paper.sc/search/?as=json&query=test").unwrap();
+      c.set_timeouts(Duration::from_secs(1), Duration::from_secs(5));
+      c.expect_200();
+      c.expect_response_contains(r#"{"response":"text","list""#);
+      Box::new(c)
+    },
+    min_check_interval: Duration::from_secs(60)
+  });
   list
 }
