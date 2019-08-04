@@ -51,5 +51,15 @@ pub fn get_checks() -> Vec<Check> {
     },
     min_check_interval: Duration::from_secs(60)
   });
+  list.push(Check{
+    desc: "SMTP TLS s1.maowtm.org",
+    checker: {
+      let mut c = CertificateChecker::builder("s1.maowtm.org".to_owned(), 25);
+      c.set_expiry_threshold(Duration::from_secs(20*24*60*60)); // 20 days
+      c.set_starttls(CertificateCheckerStartTLSOptions::SMTP);
+      Box::new(c.build().unwrap())
+    },
+    min_check_interval: Duration::from_secs(60)
+  });
   list
 }
