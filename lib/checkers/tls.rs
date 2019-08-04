@@ -3,6 +3,8 @@
 use crate::checkers::{Checker, CheckResult, CheckResultType};
 use std::time;
 use std::net;
+use std::io;
+use std::io::{BufRead, Read, Write};
 use openssl;
 
 /// Builder for [`CertificateChecker`](crate::checkers::tls::CertificateChecker).
@@ -16,12 +18,19 @@ pub struct CertificateCheckerBuilder {
   exipry_threshold: time::Duration,
   roots: CertificateCheckerRootOptions,
   fake_now: Option<time::SystemTime>,
+  starttls: CertificateCheckerStartTLSOptions,
 }
 
 #[derive(Clone)]
 pub enum CertificateCheckerRootOptions {
   OpensslDefault,
   TrustThese(Vec<openssl::x509::X509>),
+}
+
+#[derive(Clone, Copy)]
+pub enum CertificateCheckerStartTLSOptions {
+  NONE,
+  SMTP,
 }
 
 impl CertificateCheckerBuilder {
@@ -43,6 +52,7 @@ impl CertificateCheckerBuilder {
       exipry_threshold: self.exipry_threshold,
       openssl_connector: connector.build(),
       fake_now: self.fake_now,
+      starttls: self.starttls,
     })
   }
 
@@ -80,6 +90,11 @@ impl CertificateCheckerBuilder {
   pub fn set_trusted_CAs(&mut self, value: Vec<openssl::x509::X509>) {
     self.roots = CertificateCheckerRootOptions::TrustThese(value);
   }
+
+  /// Used for checking against starttls-enabled smtp services.
+  pub fn set_starttls(&mut self, value: CertificateCheckerStartTLSOptions) {
+    self.starttls = value;
+  }
 }
 
 /// Check that a TLS server's certificate is valid and is not too close to expiry.
@@ -97,6 +112,7 @@ pub struct CertificateChecker {
   exipry_threshold: time::Duration,
   openssl_connector: openssl::ssl::SslConnector,
   fake_now: Option<time::SystemTime>,
+  starttls: CertificateCheckerStartTLSOptions,
 }
 
 impl CertificateChecker {
@@ -111,6 +127,7 @@ impl CertificateChecker {
       exipry_threshold: time::Duration::from_secs(2*24*60*60),
       roots: CertificateCheckerRootOptions::OpensslDefault,
       fake_now: None,
+      starttls: CertificateCheckerStartTLSOptions::NONE,
     }
   }
 }
@@ -139,15 +156,90 @@ impl Checker for CertificateChecker {
     } else {
       -(time::UNIX_EPOCH.duration_since(compare_with).unwrap().as_secs() as time_t)
     };
-    let conn = match net::TcpStream::connect((&self.host[..], self.port)) {
+    let mut conn = match net::TcpStream::connect((&self.host[..], self.port)) {
       Ok(k) => k,
       Err(e) => return CheckResult::error(Some(format!("Unable to connect: {}", &e)))
     };
+    let _ = conn.set_nodelay(true);
     let mut ssl = match self.openssl_connector.configure() {
       Ok(k) => k,
       Err(e) => return CheckResult::error(Some(format!("Allocating SSL: {}", &e)))
     };
     unsafe { X509_VERIFY_PARAM_set_time(ssl.param_mut().as_ptr(), now_time_t) };
+
+    macro_rules! try_io {
+      ($e:expr) => {
+        if let Err(e) = $e {
+          return CheckResult::error(Some(format!("IO error: {}", &e)));
+        }
+      };
+    }
+    let mut buf: Vec<u8> = Vec::new();
+    macro_rules! read_till_crlf {
+      ($reader:expr) => {{
+        buf.clear();
+        try_io!($reader.read_until(b'\r', &mut buf));
+        if buf.last() != Some(&b'\r') {
+          return CheckResult::error(Some(format!("Unexpected EOF in protocol")));
+        }
+        buf.pop();
+        let mut r = [0u8];
+        try_io!($reader.read_exact(&mut r[..]));
+        if r[0] != b'\n' {
+          return CheckResult::error(Some(format!("Protocol error when doing starttls")));
+        }
+        match std::str::from_utf8(&buf) {
+          Ok(s) => s,
+          Err(_) => { return CheckResult::error(Some(format!("Protocol error when doing starttls"))); }
+        }
+      }};
+    }
+    macro_rules! try_unwrap {
+      ($e:expr) => {
+        match $e {
+          Some(s) => s,
+          None => { return CheckResult::error(Some(format!("Protocol error when doing starttls"))); }
+        }
+      };
+    }
+
+    match self.starttls {
+      CertificateCheckerStartTLSOptions::NONE => {},
+      CertificateCheckerStartTLSOptions::SMTP => {
+        let mut buf_reader = io::BufReader::new(match conn.try_clone() {
+          Ok(cl) => cl,
+          Err(e) => { return CheckResult::error(Some(format!("Unexpected IO error when attempting to clone socket handle: {}", &e))); }
+        });
+        // 220 maowtm.org ESMTP Postfix (Debian/GNU)
+        let _welcome_line = read_till_crlf!(buf_reader);
+        let mut welcome_line = _welcome_line.split_ascii_whitespace();
+        if try_unwrap!(welcome_line.next()) != "220" {
+          return CheckResult::error(Some(format!("Unexpected welcome: {}", _welcome_line)));
+        }
+        try_io!(conn.write_all(b"EHLO example.com\r\n"));
+        let mut has_starttls = false;
+        loop {
+          let line = read_till_crlf!(buf_reader).to_ascii_uppercase();
+          if &line == "250-STARTTLS" {
+            has_starttls = true;
+          } else if &line == "250 SMTPUTF8" {
+            break;
+          }
+        }
+        if !has_starttls {
+          return CheckResult::error(Some(format!("STARTTLS SMTP extension not present.")));
+        }
+        try_io!(conn.write_all(b"STARTTLS\r\n"));
+        if try_unwrap!(read_till_crlf!(buf_reader).split_ascii_whitespace().next()) != "220" {
+          return CheckResult::error(Some(format!("Protocol error")));
+        }
+        if buf_reader.buffer().len() > 0 {
+          return CheckResult::error(Some(format!("Protocol error")));
+        }
+        std::mem::drop(buf_reader);
+      }
+    }
+
     let mut tls_stream = match ssl.connect(&self.host, conn) {
       Ok(k) => k,
       Err(e) => return CheckResult::error(Some(format!("OpenSSL handshake: {}", &e)))
@@ -215,3 +307,17 @@ fn cert_checker_test() {
   chk.set_trusted_CAs(vec![openssl::x509::X509::from_der(include_bytes!("./tls_test_badssl_superfish.der")).unwrap()]);
   chk.build().unwrap().check().expect_err_contains("unable to get local issuer certificate");
 }
+
+// More often than not, port 25 outbound access is blocked. (This is true on
+// most major cloud services and hence likely on most CI platforms too)
+// Therefore, we're not testing STARTTLS here. I tested it myself and it "worked
+// on my machine".
+/*
+#[test]
+fn smtp_starttls_test() {
+  let mut chk = CertificateChecker::builder("gmail-smtp-in.l.google.com.".to_owned(), 25);
+  chk.set_starttls(CertificateCheckerStartTLSOptions::SMTP);
+  chk.build().unwrap().check().expect();
+}
+
+*/
