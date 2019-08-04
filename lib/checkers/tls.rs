@@ -345,7 +345,7 @@ fn cert_checker_test() {
 /*
 #[test]
 fn smtp_starttls_test() {
-  let mut chk = CertificateChecker::builder("gmail-smtp-in.l.google.com.".to_owned(), 25);
+  let mut chk = CertificateChecker::builder("gmail-smtp-in.l.google.com".to_owned(), 25);
   chk.set_starttls(CertificateCheckerStartTLSOptions::SMTP);
   chk.build().unwrap().check().expect();
 }

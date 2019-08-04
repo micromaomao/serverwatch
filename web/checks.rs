@@ -1,4 +1,4 @@
-use serverwatch::checkers::{http::HttpChecker, tls::CertificateChecker};
+use serverwatch::checkers::{http::HttpChecker, tls::{CertificateChecker, CertificateCheckerStartTLSOptions}};
 use std::time::Duration;
 use serverwatch::scheduler::simple_schd::Check;
 
@@ -28,5 +28,14 @@ pub fn get_checks() -> Vec<Check> {
       min_check_interval: Duration::from_secs(60)
     });
   }
+  list.push(Check{
+    desc: "SMTP gmail-smtp-in.l.google.com",
+    checker: {
+      let mut c = CertificateChecker::builder("gmail-smtp-in.l.google.com".to_owned(), 25);
+      c.set_starttls(CertificateCheckerStartTLSOptions::SMTP);
+      Box::new(c.build().unwrap())
+    },
+    min_check_interval: Duration::from_secs(60)
+  });
   list
 }
