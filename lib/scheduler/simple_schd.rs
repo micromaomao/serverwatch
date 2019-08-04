@@ -31,7 +31,7 @@ impl SimpleSchd {
     let now = time::Instant::now();
     use std::iter::FromIterator;
     let bh = BinaryHeap::from_iter(
-      checks.iter().enumerate().map(|(i, check)| {
+      checks.iter().enumerate().map(|(i, _check)| {
         NextCheck{
           check_index: i,
           // Initially, all tasks are executed once without waiting for their delay.

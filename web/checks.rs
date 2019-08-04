@@ -1,4 +1,4 @@
-use serverwatch::checkers::{http::HttpChecker, tls::CertificateChecker};
+use serverwatch::checkers::{http::HttpChecker, tls::{CertificateChecker, CertificateCheckerStartTLSOptions}};
 use std::time::Duration;
 use serverwatch::scheduler::simple_schd::Check;
 
