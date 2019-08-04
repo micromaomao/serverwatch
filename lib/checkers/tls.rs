@@ -6,6 +6,7 @@ use std::net;
 use std::io;
 use std::io::{BufRead, Read, Write};
 use openssl;
+use crate::utils::with_timeout;
 
 /// Builder for [`CertificateChecker`](crate::checkers::tls::CertificateChecker).
 /// Returned by
@@ -19,6 +20,7 @@ pub struct CertificateCheckerBuilder {
   roots: CertificateCheckerRootOptions,
   fake_now: Option<time::SystemTime>,
   starttls: CertificateCheckerStartTLSOptions,
+  timeout: time::Duration,
 }
 
 #[derive(Clone)]
@@ -53,6 +55,7 @@ impl CertificateCheckerBuilder {
       openssl_connector: connector.build(),
       fake_now: self.fake_now,
       starttls: self.starttls,
+      timeout: self.timeout,
     })
   }
 
@@ -92,8 +95,17 @@ impl CertificateCheckerBuilder {
   }
 
   /// Used for checking against starttls-enabled smtp services.
+  ///
+  /// Default is `NONE`.
   pub fn set_starttls(&mut self, value: CertificateCheckerStartTLSOptions) {
     self.starttls = value;
+  }
+
+  /// Set a time out for the check, from beginning connection to tls shutdown.
+  ///
+  /// Default is 10s.
+  pub fn set_timeout(&mut self, value: time::Duration) {
+    self.timeout = value;
   }
 }
 
@@ -113,6 +125,7 @@ pub struct CertificateChecker {
   openssl_connector: openssl::ssl::SslConnector,
   fake_now: Option<time::SystemTime>,
   starttls: CertificateCheckerStartTLSOptions,
+  timeout: time::Duration,
 }
 
 impl CertificateChecker {
@@ -128,6 +141,7 @@ impl CertificateChecker {
       roots: CertificateCheckerRootOptions::OpensslDefault,
       fake_now: None,
       starttls: CertificateCheckerStartTLSOptions::NONE,
+      timeout: time::Duration::from_secs(10),
     }
   }
 }
@@ -156,118 +170,129 @@ impl Checker for CertificateChecker {
     } else {
       -(time::UNIX_EPOCH.duration_since(compare_with).unwrap().as_secs() as time_t)
     };
-    let mut conn = match net::TcpStream::connect((&self.host[..], self.port)) {
-      Ok(k) => k,
-      Err(e) => return CheckResult::error(Some(format!("Unable to connect: {}", &e)))
-    };
-    let _ = conn.set_nodelay(true);
+    let host = self.host.to_owned();
+    let port = self.port;
     let mut ssl = match self.openssl_connector.configure() {
       Ok(k) => k,
       Err(e) => return CheckResult::error(Some(format!("Allocating SSL: {}", &e)))
     };
     unsafe { X509_VERIFY_PARAM_set_time(ssl.param_mut().as_ptr(), now_time_t) };
-
-    macro_rules! try_io {
-      ($e:expr) => {
-        if let Err(e) = $e {
-          return CheckResult::error(Some(format!("IO error: {}", &e)));
-        }
+    let failure_mode = self.failure_mode;
+    let starttls = self.starttls;
+    let check_result = with_timeout(move || {
+      let mut conn = match net::TcpStream::connect((&host[..], port)) {
+        Ok(k) => k,
+        Err(e) => return CheckResult::error(Some(format!("Unable to connect: {}", &e)))
       };
-    }
-    let mut buf: Vec<u8> = Vec::new();
-    macro_rules! read_till_crlf {
-      ($reader:expr) => {{
-        buf.clear();
-        try_io!($reader.read_until(b'\r', &mut buf));
-        if buf.last() != Some(&b'\r') {
-          return CheckResult::error(Some(format!("Unexpected EOF in protocol")));
-        }
-        buf.pop();
-        let mut r = [0u8];
-        try_io!($reader.read_exact(&mut r[..]));
-        if r[0] != b'\n' {
-          return CheckResult::error(Some(format!("Protocol error when doing starttls")));
-        }
-        match std::str::from_utf8(&buf) {
-          Ok(s) => s,
-          Err(_) => { return CheckResult::error(Some(format!("Protocol error when doing starttls"))); }
-        }
-      }};
-    }
-    macro_rules! try_unwrap {
-      ($e:expr) => {
-        match $e {
-          Some(s) => s,
-          None => { return CheckResult::error(Some(format!("Protocol error when doing starttls"))); }
-        }
-      };
-    }
+      let _ = conn.set_nodelay(true);
 
-    match self.starttls {
-      CertificateCheckerStartTLSOptions::NONE => {},
-      CertificateCheckerStartTLSOptions::SMTP => {
-        let mut buf_reader = io::BufReader::new(match conn.try_clone() {
-          Ok(cl) => cl,
-          Err(e) => { return CheckResult::error(Some(format!("Unexpected IO error when attempting to clone socket handle: {}", &e))); }
-        });
-        // 220 maowtm.org ESMTP Postfix (Debian/GNU)
-        let _welcome_line = read_till_crlf!(buf_reader);
-        let mut welcome_line = _welcome_line.split_ascii_whitespace();
-        if try_unwrap!(welcome_line.next()) != "220" {
-          return CheckResult::error(Some(format!("Unexpected welcome: {}", _welcome_line)));
-        }
-        try_io!(conn.write_all(b"EHLO example.com\r\n"));
-        let mut has_starttls = false;
-        loop {
-          let line = read_till_crlf!(buf_reader).to_ascii_uppercase();
-          if &line == "250-STARTTLS" {
-            has_starttls = true;
-          } else if &line == "250 SMTPUTF8" {
-            break;
+      macro_rules! try_io {
+        ($e:expr) => {
+          if let Err(e) = $e {
+            return CheckResult::error(Some(format!("IO error: {}", &e)));
           }
-        }
-        if !has_starttls {
-          return CheckResult::error(Some(format!("STARTTLS SMTP extension not present.")));
-        }
-        try_io!(conn.write_all(b"STARTTLS\r\n"));
-        if try_unwrap!(read_till_crlf!(buf_reader).split_ascii_whitespace().next()) != "220" {
-          return CheckResult::error(Some(format!("Protocol error")));
-        }
-        if buf_reader.buffer().len() > 0 {
-          return CheckResult::error(Some(format!("Protocol error")));
-        }
-        std::mem::drop(buf_reader);
+        };
       }
-    }
+      let mut buf: Vec<u8> = Vec::new();
+      macro_rules! read_till_crlf {
+        ($reader:expr) => {{
+          buf.clear();
+          try_io!($reader.read_until(b'\r', &mut buf));
+          if buf.last() != Some(&b'\r') {
+            return CheckResult::error(Some(format!("Unexpected EOF in protocol")));
+          }
+          buf.pop();
+          let mut r = [0u8];
+          try_io!($reader.read_exact(&mut r[..]));
+          if r[0] != b'\n' {
+            return CheckResult::error(Some(format!("Protocol error when doing starttls")));
+          }
+          match std::str::from_utf8(&buf) {
+            Ok(s) => s,
+            Err(_) => { return CheckResult::error(Some(format!("Protocol error when doing starttls"))); }
+          }
+        }};
+      }
+      macro_rules! try_unwrap {
+        ($e:expr) => {
+          match $e {
+            Some(s) => s,
+            None => { return CheckResult::error(Some(format!("Protocol error when doing starttls"))); }
+          }
+        };
+      }
 
-    let mut tls_stream = match ssl.connect(&self.host, conn) {
-      Ok(k) => k,
-      Err(e) => return CheckResult::error(Some(format!("OpenSSL handshake: {}", &e)))
-    };
-    let peer_cert = match tls_stream.ssl().peer_certificate() {
-      Some(c) => c,
-      None => return CheckResult::error(Some(format!("No peer certificate?")))
-    };
-    let not_after = peer_cert.not_after();
-    let ret_ok = unsafe { ASN1_TIME_cmp_time_t(not_after.as_ptr(), compare_with) } >= 0;
-    std::thread::spawn(move || {
-      if {let s = tls_stream.shutdown(); s.is_ok() && s.unwrap() == openssl::ssl::ShutdownResult::Sent} {
-        let _ = tls_stream.shutdown();
+      match starttls {
+        CertificateCheckerStartTLSOptions::NONE => {},
+        CertificateCheckerStartTLSOptions::SMTP => {
+          let mut buf_reader = io::BufReader::new(match conn.try_clone() {
+            Ok(cl) => cl,
+            Err(e) => { return CheckResult::error(Some(format!("Unexpected IO error when attempting to clone socket handle: {}", &e))); }
+          });
+          // 220 maowtm.org ESMTP Postfix (Debian/GNU)
+          let _welcome_line = read_till_crlf!(buf_reader);
+          let mut welcome_line = _welcome_line.split_ascii_whitespace();
+          if try_unwrap!(welcome_line.next()) != "220" {
+            return CheckResult::error(Some(format!("Unexpected welcome: {}", _welcome_line)));
+          }
+          try_io!(conn.write_all(b"EHLO example.com\r\n"));
+          let mut has_starttls = false;
+          loop {
+            let line = read_till_crlf!(buf_reader).to_ascii_uppercase();
+            if &line == "250-STARTTLS" {
+              has_starttls = true;
+            } else if &line == "250 SMTPUTF8" {
+              break;
+            }
+          }
+          if !has_starttls {
+            return CheckResult::error(Some(format!("STARTTLS SMTP extension not present.")));
+          }
+          try_io!(conn.write_all(b"STARTTLS\r\n"));
+          if try_unwrap!(read_till_crlf!(buf_reader).split_ascii_whitespace().next()) != "220" {
+            return CheckResult::error(Some(format!("Protocol error")));
+          }
+          if buf_reader.buffer().len() > 0 {
+            return CheckResult::error(Some(format!("Protocol error")));
+          }
+          std::mem::drop(buf_reader);
+        }
       }
-    });
-    if ret_ok {
-      return CheckResult::up(Some(format!("Certificate valid until {}", &not_after.to_string())));
-    } else {
-      let now_asn1 = unsafe { openssl::asn1::Asn1Time::from_ptr(ASN1_TIME_set(std::ptr::null_mut(), now_time_t)) };
-      let mut diff_day: std::os::raw::c_int = 0;
-      let mut diff_sec: std::os::raw::c_int = 0;
-      unsafe { ASN1_TIME_diff(&mut diff_day as *mut _, &mut diff_sec as *mut _, now_asn1.as_ptr(), not_after.as_ptr()) };
-      let mut valid_rem_days: f32 = diff_day as f32;
-      valid_rem_days += diff_sec as f32 / (24*60*60) as f32;
-      return CheckResult{
-        result_type: self.failure_mode,
-        info: Some(format!("Certificate expiring in {:.1} days: Certificate valid until {}; current time is {}.", valid_rem_days, &not_after.to_string(), &now_asn1.to_string())),
+
+      let mut tls_stream = match ssl.connect(&host, conn) {
+        Ok(k) => k,
+        Err(e) => return CheckResult::error(Some(format!("OpenSSL handshake: {}", &e)))
       };
+      let peer_cert = match tls_stream.ssl().peer_certificate() {
+        Some(c) => c,
+        None => return CheckResult::error(Some(format!("No peer certificate?")))
+      };
+      let not_after = peer_cert.not_after();
+      let ret_ok = unsafe { ASN1_TIME_cmp_time_t(not_after.as_ptr(), compare_with) } >= 0;
+      std::thread::spawn(move || {
+        if {let s = tls_stream.shutdown(); s.is_ok() && s.unwrap() == openssl::ssl::ShutdownResult::Sent} {
+          let _ = tls_stream.shutdown();
+        }
+      });
+      if ret_ok {
+        return CheckResult::up(Some(format!("Certificate valid until {}", &not_after.to_string())));
+      } else {
+        let now_asn1 = unsafe { openssl::asn1::Asn1Time::from_ptr(ASN1_TIME_set(std::ptr::null_mut(), now_time_t)) };
+        let mut diff_day: std::os::raw::c_int = 0;
+        let mut diff_sec: std::os::raw::c_int = 0;
+        unsafe { ASN1_TIME_diff(&mut diff_day as *mut _, &mut diff_sec as *mut _, now_asn1.as_ptr(), not_after.as_ptr()) };
+        let mut valid_rem_days: f32 = diff_day as f32;
+        valid_rem_days += diff_sec as f32 / (24*60*60) as f32;
+        return CheckResult{
+          result_type: failure_mode,
+          info: Some(format!("Certificate expiring in {:.1} days: Certificate valid until {}; current time is {}.", valid_rem_days, &not_after.to_string(), &now_asn1.to_string())),
+        };
+      }
+    }, self.timeout);
+    if let Some(r) = check_result {
+      return r;
+    } else {
+      return CheckResult::error(Some(format!("Timed out")));
     }
   }
 }
@@ -306,6 +331,11 @@ fn cert_checker_test() {
   let mut chk = CertificateChecker::builder("google.com".to_owned(), 443);
   chk.set_trusted_CAs(vec![openssl::x509::X509::from_der(include_bytes!("./tls_test_badssl_superfish.der")).unwrap()]);
   chk.build().unwrap().check().expect_err_contains("unable to get local issuer certificate");
+
+  let mut chk = CertificateChecker::builder("google.com".to_owned(), 443);
+  chk.clone().build().unwrap().check().expect();
+  chk.set_timeout(time::Duration::from_millis(1));
+  chk.clone().build().unwrap().check().expect_err_contains("Timed out");
 }
 
 // More often than not, port 25 outbound access is blocked. (This is true on
