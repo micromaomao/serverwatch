@@ -8,21 +8,33 @@ fn s_string(s: String) -> &'static str {
 
 pub fn get_checks() -> Vec<Check> {
   let mut list = Vec::new();
-  for domain in vec!["maowtm.org", "paper.sc", "static.maowtm.org", "localhost"].into_iter() {
+  let domains: Vec<(&'static str, u16, Option<&'static str>)> = vec![
+    ("maowtm.org", 200, Some("Mao Wtm")),
+    ("paper.sc", 200, Some("search engine for CIE papers")),
+    ("static.maowtm.org", 404, Some("https://static.maowtm.org/svg/logo.svg")),
+    ("death.maowtm.org", 200, Some("<!DOCTYPE HTML>")),
+    ("oa.szlf.com", 302, None),
+    ("status.maowtm.org", 200, Some("HTTP maowtm.org"))
+  ];
+  for (domain, expect_status, expect_contains) in domains.into_iter() {
     list.push(Check{
       desc: s_string(format!("HTTP {}", domain)),
       checker: {
         let mut c = HttpChecker::new(&format!("https://{}/", domain)).unwrap();
         c.set_timeouts(Duration::from_secs(1), Duration::from_secs(5));
+        c.expect_status(expect_status);
+        if let Some(f) = expect_contains {
+          c.expect_response_contains(f);
+        }
         Box::new(c)
       },
-      min_check_interval: Duration::from_secs(10)
+      min_check_interval: Duration::from_secs(15)
     });
     list.push(Check{
       desc: s_string(format!("TLS {}", domain)),
       checker: {
         let mut c = CertificateChecker::builder(domain.to_owned(), 443);
-        c.set_expiry_threshold(Duration::from_secs(10*24*60*60)); // 10 days
+        c.set_expiry_threshold(Duration::from_secs(20*24*60*60)); // 20 days
         Box::new(c.build().unwrap())
       },
       min_check_interval: Duration::from_secs(60)
