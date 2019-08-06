@@ -7,7 +7,7 @@ edition = "2018"
 [features]
 default = ["checkers"]
 checkers = ["reqwest", "lazy_static", "openssl", "openssl-sys", "foreign-types", "libc"]
-web = ["rocket", "rocket_contrib", "serde"]
+web = ["rocket", "rocket_contrib", "serde", "serde_json"]
 
 [dependencies]
 reqwest = { version = "0.9.19", optional = true }
@@ -20,8 +20,9 @@ foreign-types = { version = "0.3.2", optional = true }
 libc = { version = "0.2.59", optional = true }
 
 rocket = { version = "0.4.2", optional = true }
-rocket_contrib = { version = "0.4.2", optional = true, features = ["handlebars_templates", "json"], default-features = false }
+rocket_contrib = { version = "0.4.2", optional = true, features = ["handlebars_templates", "json", "serve"], default-features = false }
 serde = { version = "1.0.94", optional = true }
+serde_json = { version = "1.0.40", optional = true }
 
 [lib]
 name = "serverwatch"
