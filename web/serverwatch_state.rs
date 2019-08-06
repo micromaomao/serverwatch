@@ -4,7 +4,7 @@ use super::checks;
 use std::collections::VecDeque;
 use std::sync::RwLock;
 
-pub const NUM_STORED_RESULTS: usize = 16;
+pub const NUM_STORED_RESULTS: usize = 128;
 
 pub fn init() -> SwState {
   let checks_list = checks::get_checks();

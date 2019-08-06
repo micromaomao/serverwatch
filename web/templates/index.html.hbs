@@ -3,35 +3,32 @@
 	<head>
 		<meta charset="utf-8">
 		<meta name="viewport" content="width=device-width, initial-scale=1">
-		<link rel="stylesheet" href="/style.css">
-		<link rel="stylesheet" href="https://fonts.googleapis.com/icon?family=Material+Icons">
-		<title>maowtm.org (and related services)'s very simple status page</title>
+		<link rel="stylesheet" href="assets/style.css">
+		<link rel="stylesheet" href="assets/icomoon/style.css">
 	</head>
-	<body>
-		<h1>maowtm.org (and related services)'s very simple status page</h1>
-		<ul>
-			{{#each checks}}
-				<li class="check check_{{last_state}}">
-					<div class="desc">{{desc}}</div>
-					<div class="logs">
-						{{#each log}}
-							<a href="#e_{{cssid}}" class="state_block state_{{state}}">{{state_material_icon}}</a>
-						{{/each}}
-					</div>
-					<div class="details">
-						<ul>
+	<body data-check-state="{{check_state_json}}">
+		<noscript>
+			<p>Enable Javascript, please&hellip;</p>
+			<ul>
+				{{#each checks}}
+					<li>
+						{{desc}}: {{last_state}}
+						<ul style="max-height: 40vh; overflow: auto;">
 							{{#each log}}
-								<li id="e_{{cssid}}" class="detail detail_{{state}}">
-									<div class="padding">
-										<span class="timestamp" data-time="{{time}}">{{time}}</span>: <code>{{state_upper_case}}</code> <code>{{info}}</code>
-									</div>
+								<li>
+									<span class="timestamp" data-time="{{time}}">{{time}}</span>: <code>{{state}}</code> <code>{{info}}</code>
 								</li>
 							{{/each}}
 						</ul>
-					</div>
-				</li>
-			{{/each}}
-		</ul>
-		<script src="/script.js"></script>
+					</li>
+				{{/each}}
+			</ul>
+		</noscript>
+		<script>
+			let div = document.createElement('div');
+			div.innerHTML = 'Loading&hellip;';
+			document.body.appendChild(div);
+		</script>
+		<script src="assets/script.js"></script>
 	</body>
 </html>

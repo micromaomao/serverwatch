@@ -7,6 +7,7 @@ mod api;
 mod pages;
 
 use rocket_contrib::templates;
+use rocket_contrib::serve::{self, StaticFiles};
 
 fn main() {
   rocket::ignite()
@@ -14,5 +15,6 @@ fn main() {
     .attach(templates::Template::fairing())
     .mount("/", pages::pages_routes())
     .mount("/api", api::api_routes())
+    .mount("/assets", StaticFiles::new("assets/dist/", serve::Options::DotFiles))
     .launch();
 }
