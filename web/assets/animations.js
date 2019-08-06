@@ -1,5 +1,4 @@
 import { cubicOut } from 'svelte/easing'
-import { parse } from 'terser';
 export function yscale(node, {
   delay = 0,
   duration = 500,
