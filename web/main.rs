@@ -1,10 +1,11 @@
-#![feature(proc_macro_hygiene, decl_macro)]
+#![feature(proc_macro_hygiene, decl_macro, type_ascription)]
 
 #[macro_use] extern crate rocket;
 mod checks;
 mod serverwatch_state;
 mod api;
 mod pages;
+mod datastores;
 
 use rocket_contrib::templates;
 use rocket_contrib::serve::{self, StaticFiles};
