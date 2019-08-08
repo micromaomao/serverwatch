@@ -70,7 +70,8 @@ pub fn get_checks() -> Vec<Check> {
   http_and_tls!(1<<4, "paper.sc", 200, Some("search engine for CIE papers"));
   http_and_tls!(2<<4, "static.maowtm.org", 404, Some("https://static.maowtm.org/svg/logo.svg"));
   http_and_tls!(3<<4, "death.maowtm.org", 200, Some("<!DOCTYPE HTML>"));
-  http_and_tls!(4<<4, "oa.szlf.com", 302, None);
+  http!(        4<<4, "oa.szlf.com", 302, None, Duration::from_secs(3));
+  tls!(         4<<4 + 1, "oa.szlf.com");
   http_and_tls!(5<<4, "status.maowtm.org", 200, Some("HTTP maowtm.org"));
   smtp!(        6<<4, "s1.maowtm.org");
   add_check!(   7<<4, "paper.sc query test", Duration::from_secs(30), {
