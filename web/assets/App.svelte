@@ -28,9 +28,10 @@ onMount(() => {
           }
         }
         let last_ids = check_state.checks.map(check => (check.log[0] || {id: -1}).id);
-        check_state.checks = check_state.checks.map((check, i) => {
-          check.log = new_state.checks[i].log.filter(entry => entry.id > last_ids[i]).concat(check.log).slice(0,1000);
-          return check;
+        check_state.checks = check_state.checks.map((old_check, i) => {
+          return Object.assign(new_state.checks[i], {
+            log: new_state.checks[i].log.filter(entry => entry.id > last_ids[i]).concat(old_check.log).slice(0,1000)
+          });
         });
       }
     }, err => {
