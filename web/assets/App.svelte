@@ -17,7 +17,21 @@ onMount(() => {
     }).then(new_state => {
       if (!exited) {
         timeout_handle = setTimeout(g, fetch_delay);
-        check_state = new_state;
+        if (new_state.checks.length != check_state.checks.length) {
+          check_state = new_state;
+          return;
+        }
+        for (let i = 0; i < new_state.checks.length; i ++) {
+          if (new_state.checks[i].id != check_state.checks[i].id) {
+            check_state = new_state;
+            return;
+          }
+        }
+        let last_ids = check_state.checks.map(check => (check.log[0] || {id: -1}).id);
+        check_state.checks = check_state.checks.map((check, i) => {
+          check.log = new_state.checks[i].log.filter(entry => entry.id > last_ids[i]).concat(check.log).slice(0,1000);
+          return check;
+        });
       }
     }, err => {
       if (!exited) {

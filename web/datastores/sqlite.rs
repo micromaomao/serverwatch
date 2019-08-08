@@ -21,7 +21,7 @@ impl SQLiteDataStore {
       Self::initialize(&conn)?;
     }
     Self::check(&conn)?;
-    conn.busy_timeout(std::time::Duration::from_millis(100));
+    conn.busy_timeout(std::time::Duration::from_millis(100)).map_err(|e| DatabaseError::from_inner_and_str(e, "Unable to set busy timeout"))?;
     Ok(Self{conn: Mutex::new(RefCell::new(conn))})
   }
 
@@ -141,7 +141,7 @@ impl DataStore for SQLiteDataStore {
     let conn = conn.borrow();
     conn.query_row("SELECT time, result_type, result_info FROM Logs WHERE id = ?", &[id as i64], row_to_check_log).map_err(DatabaseError::from_inner)?
   }
-  fn search_log<F: FnMut(CheckLogId, CheckLog) -> bool>(&self, check: CheckId, search: LogFilter, order: LogOrder, mut each_fn: F) -> DataResult<()> {
+  fn search_log<'a>(&'a self, check: CheckId, search: LogFilter, order: LogOrder, mut each_fn: Box<dyn FnMut(CheckLogId, CheckLog) -> bool + 'a>) -> DataResult<()> {
     use rusqlite::types::Value;
     let mut sql = String::from("SELECT time, result_type, result_info, id FROM Logs WHERE check_id = ?");
     let mut values: Vec<Value> = vec![Value::from(check)];

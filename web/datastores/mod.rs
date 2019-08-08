@@ -97,7 +97,7 @@ pub enum LogOrder {
 pub trait DataStore: Send + Sync {
   fn add_log(&self, check_id: CheckId, log: CheckLog) -> DataResult<CheckLogId>;
   fn query_log(&self, id: CheckLogId) -> DataResult<CheckLog>;
-  fn search_log<F: FnMut(CheckLogId, CheckLog) -> bool>(&self, check: CheckId, search: LogFilter, order: LogOrder, each_fn: F) -> DataResult<()>;
+  fn search_log<'a>(&'a self, check: CheckId, search: LogFilter, order: LogOrder, each_fn: Box<dyn FnMut(CheckLogId, CheckLog) -> bool + 'a>) -> DataResult<()>;
   fn count_logs(&self, check: CheckId, filter: LogFilter) -> DataResult<LogCounts>;
 }
 

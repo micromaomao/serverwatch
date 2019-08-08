@@ -3,7 +3,6 @@ use rocket::State;
 use super::serverwatch_state::SwState;
 use serde::Serialize;
 use super::datastores;
-use datastores::DataStore;
 
 #[derive(Serialize)]
 pub struct StatusLogResponse {
@@ -12,6 +11,7 @@ pub struct StatusLogResponse {
 
 #[derive(Serialize)]
 pub struct CheckLogResponse {
+	pub id: datastores::CheckId,
 	pub desc: &'static str,
 	pub log: Vec<CheckLogEntry>,
 	pub last_state: &'static str,
@@ -19,6 +19,7 @@ pub struct CheckLogResponse {
 
 #[derive(Serialize)]
 pub struct CheckLogEntry {
+	pub id: datastores::CheckLogId,
 	pub state: &'static str,
 	pub info: String,
 	pub time: u64,
@@ -47,11 +48,13 @@ pub fn get_status_log_response_struct(sw_state: State<SwState>) -> Result<Status
 			let iter = sw_state.checkids_list.iter().enumerate().map(|(index, check_id)| {
 				let desc = sw_state.descs_list[index];
 				Ok(CheckLogResponse{
+					id: *check_id,
 					desc,
 					log: {
 						let mut log = Vec::new();
-						sw_state.data_store.search_log(*check_id, datastores::LogFilter::default(), datastores::LogOrder::TimeDesc, |_, log_entry| {
+						sw_state.data_store.search_log(*check_id, datastores::LogFilter::default(), datastores::LogOrder::TimeDesc, Box::new(|log_id, log_entry| {
 							log.push(CheckLogEntry{
+								id: log_id,
 								state: result_type_to_string(log_entry.result.result_type),
 								info: match log_entry.result.info {
 									Some(s) => s,
@@ -59,8 +62,8 @@ pub fn get_status_log_response_struct(sw_state: State<SwState>) -> Result<Status
 								},
 								time: log_entry.time.duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64,
 							});
-							true
-						})?;
+							log.len() < 50
+						}))?;
 						log
 					},
 					last_state: last_states[index]

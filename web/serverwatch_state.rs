@@ -7,7 +7,7 @@ pub struct SwState {
   pub schd: Arc<SimpleSchd>,
   pub descs_list: Vec<&'static str>,
   pub checkids_list: Vec<datastores::CheckId>,
-  pub data_store: Arc<datastores::sqlite::SQLiteDataStore>,
+  pub data_store: Arc<dyn datastores::DataStore>,
 }
 
 pub fn init() -> SwState {

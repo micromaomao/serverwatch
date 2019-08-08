@@ -14,12 +14,15 @@
   let show_warn = true;
   let show_err = true;
   $: log_showing = apply_filter(show_up, show_warn, show_err, log).map(l => Object.assign({}, l, {time: new Date(l.time)}));
+  let time_utc = false;
 </script>
 
 <style>
   ul {
     max-height: 50vh;
     overflow: auto;
+    overflow-y: scroll;
+    -webkit-overflow-scrolling: touch;
   }
   .l-up {
     color: var(--color-green);
@@ -44,7 +47,7 @@
   .filter-control .filter-icon {
     font-size: 1.3em;
   }
-  .filter-control > label {
+  .filter-control > label.mono {
     font-family: monospace;
     font-size: 1rem;
     margin-right: 0.5rem;
@@ -52,18 +55,23 @@
   .filter-control > label > input {
     margin-right: 0.2rem;
   }
+  .filter-control > .sep {
+    margin: 0 0.5rem;
+  }
 </style>
 
 <div class="filter-control">
   <span class="icon- filter-icon">filter</span>&nbsp;
-  <label><input type="checkbox" bind:checked={show_up} />UP</label>
-  <label><input type="checkbox" bind:checked={show_warn} />WARN</label>
-  <label><input type="checkbox" bind:checked={show_err} />ERR</label>
+  <label class="mono"><input type="checkbox" bind:checked={show_up} />UP</label>
+  <label class="mono"><input type="checkbox" bind:checked={show_warn} />WARN</label>
+  <label class="mono"><input type="checkbox" bind:checked={show_err} />ERR</label>
+  <span class="sep" />
+  <label><input type="checkbox" bind:checked={time_utc} />show time in UTC</label>
 </div>
 {#if log_showing.length > 0}
   <ul>
-    {#each log_showing as l}
-      <li class="l-{l.state}">{l.time.toLocaleTimeString()} ({reltime(l.time, $now)} ago): {l.state.toUpperCase()} {l.info}</li>
+    {#each log_showing as l (l.id)}
+      <li class="l-{l.state}">{time_utc ? l.time.toISOString() : l.time.toLocaleTimeString()} ({reltime(l.time, $now)} ago): {l.state.toUpperCase()} {l.info}</li>
     {/each}
   </ul>
 {:else}
