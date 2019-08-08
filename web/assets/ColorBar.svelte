@@ -29,7 +29,7 @@
   }
   $: bars = to_bars(log);
 
-  const scale_factor = 100/(1000*60*30);
+  const scale_factor = 100/(1000*60*10);
 </script>
 
 <style>

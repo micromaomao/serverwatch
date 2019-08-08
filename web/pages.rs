@@ -12,7 +12,7 @@ struct Ctx {
 
 #[get("/")]
 fn index(sw_state: State<SwState>) -> Result<Template, String> {
-  let check_state = get_status_log_response_struct(sw_state);
+  let check_state = get_status_log_response_struct(sw_state).map_err(|e| format!("Unable to fetch status from database: {}", &e))?;
   Ok(Template::render("index", Ctx{check_state_json: serde_json::to_string(&check_state).map_err(|e| format!("{}", &e))?, checks: check_state.checks}))
 }
 
