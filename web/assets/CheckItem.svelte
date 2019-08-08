@@ -3,6 +3,7 @@
   import { createEventDispatcher } from 'svelte';
   import ColorBar from './ColorBar.svelte';
   import LogDisplay from './LogDisplay.svelte';
+  import QuickStatistics from './QuickStatistics.svelte';
   export let check;
   export let showing_more;
   const dispatch = createEventDispatcher();
@@ -106,6 +107,7 @@
       <div class="color-bar">
         <ColorBar log={check.log} />
       </div>
+      <QuickStatistics stat={check.statistics} />
       <LogDisplay log={check.log} />
     </div>
   {/if}

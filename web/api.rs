@@ -15,6 +15,7 @@ pub struct CheckLogResponse {
 	pub desc: &'static str,
 	pub log: Vec<CheckLogEntry>,
 	pub last_state: &'static str,
+	pub statistics: QuickStatistics,
 }
 
 #[derive(Serialize)]
@@ -23,6 +24,13 @@ pub struct CheckLogEntry {
 	pub state: &'static str,
 	pub info: String,
 	pub time: u64,
+}
+
+#[derive(Serialize)]
+pub struct QuickStatistics {
+	pub last_day: datastores::LogCounts,
+	pub last_7_day: datastores::LogCounts,
+	pub last_month: datastores::LogCounts,
 }
 
 use serverwatch::checkers::CheckResultType;
@@ -43,6 +51,10 @@ pub fn get_status_log_response_struct(sw_state: State<SwState>) -> Result<Status
 			"null"
 		}
 	}).collect();
+	let now = std::time::SystemTime::now();
+	use datastores::LogFilter;
+	use std::time::Duration;
+	let day = Duration::from_secs(24*60*60);
 	Ok(StatusLogResponse{
 		checks: {
 			let iter = sw_state.checkids_list.iter().enumerate().map(|(index, check_id)| {
@@ -52,7 +64,7 @@ pub fn get_status_log_response_struct(sw_state: State<SwState>) -> Result<Status
 					desc,
 					log: {
 						let mut log = Vec::new();
-						sw_state.data_store.search_log(*check_id, datastores::LogFilter::default(), datastores::LogOrder::TimeDesc, Box::new(|log_id, log_entry| {
+						sw_state.data_store.search_log(*check_id, LogFilter::after(now - Duration::from_secs(10*60)), datastores::LogOrder::TimeDesc, Box::new(|log_id, log_entry| {
 							log.push(CheckLogEntry{
 								id: log_id,
 								state: result_type_to_string(log_entry.result.result_type),
@@ -62,11 +74,16 @@ pub fn get_status_log_response_struct(sw_state: State<SwState>) -> Result<Status
 								},
 								time: log_entry.time.duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64,
 							});
-							log.len() < 50
+							true
 						}))?;
 						log
 					},
-					last_state: last_states[index]
+					last_state: last_states[index],
+					statistics: QuickStatistics{
+						last_day: sw_state.data_store.count_logs(*check_id, LogFilter::after(now - day))?,
+						last_7_day: sw_state.data_store.count_logs(*check_id, LogFilter::after(now - 7*day))?,
+						last_month: sw_state.data_store.count_logs(*check_id, LogFilter::after(now - 30*day))?
+					}
 				})
 			});
 			let mut checks = Vec::new();

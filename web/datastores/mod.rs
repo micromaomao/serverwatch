@@ -5,7 +5,7 @@ pub type CheckId = u32;
 
 pub type CheckLogId = u64;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CheckLog {
   pub time: time::SystemTime,
   pub result: CheckResult,
@@ -60,11 +60,27 @@ impl DatabaseError {
   }
 }
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+use serde::Serialize;
+#[derive(Clone, PartialEq, Eq, Debug, Serialize)]
 pub struct LogCounts {
   pub num_up: u64,
   pub num_warn: u64,
   pub num_error: u64,
+}
+
+impl std::ops::Add for LogCounts {
+  type Output = Self;
+  fn add(self, rhs: Self) -> Self {
+    Self{num_up: self.num_up + rhs.num_up, num_warn: self.num_warn + rhs.num_warn, num_error: self.num_error + rhs.num_error}
+  }
+}
+
+impl std::ops::AddAssign for LogCounts {
+  fn add_assign(&mut self, rhs: Self) {
+    self.num_up += rhs.num_up;
+    self.num_warn += rhs.num_warn;
+    self.num_error += rhs.num_error;
+  }
 }
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -83,6 +99,18 @@ impl Default for LogFilter {
       include_error: true,
       min_time: None,
       max_time: None
+    }
+  }
+}
+
+impl LogFilter {
+  pub fn after(t: time::SystemTime) -> Self {
+    Self{
+      include_up: true,
+      include_warn: true,
+      include_error: true,
+      min_time: Some(t),
+      max_time: None,
     }
   }
 }
@@ -119,3 +147,4 @@ pub fn str_to_result_type(s: &str) -> Option<CheckResultType> {
 }
 
 pub mod sqlite;
+#[cfg(test)] mod test;

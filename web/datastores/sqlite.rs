@@ -3,7 +3,9 @@ use rusqlite;
 use rusqlite::OptionalExtension;
 use std::sync::Mutex;
 use std::cell::RefCell;
+use std::time::{SystemTime, Duration};
 use serverwatch::checkers::{CheckResult, CheckResultType};
+use rusqlite::types::{Value, ValueRef};
 
 pub struct SQLiteDataStore {
   conn: Mutex<RefCell<rusqlite::Connection>>,
@@ -21,7 +23,7 @@ impl SQLiteDataStore {
       Self::initialize(&conn)?;
     }
     Self::check(&conn)?;
-    conn.busy_timeout(std::time::Duration::from_millis(100)).map_err(|e| DatabaseError::from_inner_and_str(e, "Unable to set busy timeout"))?;
+    conn.busy_timeout(Duration::from_millis(100)).map_err(|e| DatabaseError::from_inner_and_str(e, "Unable to set busy timeout"))?;
     Ok(Self{conn: Mutex::new(RefCell::new(conn))})
   }
 
@@ -44,8 +46,6 @@ impl SQLiteDataStore {
   }
 }
 
-use std::time::SystemTime;
-
 fn time2int(time: SystemTime) -> i64 {
   let epoch = std::time::UNIX_EPOCH;
   if time >= epoch {
@@ -56,7 +56,6 @@ fn time2int(time: SystemTime) -> i64 {
 }
 fn int2time(i: i64) -> time::SystemTime {
   let epoch = std::time::UNIX_EPOCH;
-  use std::time::Duration;
   if i >= 0 {
     epoch + Duration::from_millis(i as u64)
   } else {
@@ -66,14 +65,12 @@ fn int2time(i: i64) -> time::SystemTime {
 
 #[test]
 fn time2int_test() {
-  use std::time::Duration;
   assert_eq!(time2int(SystemTime::UNIX_EPOCH), 0);
   assert_eq!(time2int(SystemTime::UNIX_EPOCH + Duration::from_secs(1)), 1000);
   assert_eq!(time2int(SystemTime::UNIX_EPOCH - Duration::from_secs(1)), -1000);
 }
 
 pub fn row_to_check_log(row: &rusqlite::Row) -> rusqlite::Result<DataResult<CheckLog>> {
-  use rusqlite::types::ValueRef;
   Ok(Ok(CheckLog{
     time: int2time(row.get(0)?),
     result: CheckResult{
@@ -92,8 +89,7 @@ pub fn row_to_check_log(row: &rusqlite::Row) -> rusqlite::Result<DataResult<Chec
 
 impl DataStore for SQLiteDataStore {
   fn add_log(&self, check_id: CheckId, log: CheckLog) -> DataResult<CheckLogId> {
-    use rusqlite::types::Value;
-    let now = SystemTime::now();
+    let now = log.time;
     let conn = self.conn.lock().unwrap();
     let mut conn = conn.borrow_mut();
     let mut tr = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e| DatabaseError::from_inner_and_str(e, "unable to start transaction"))?;
@@ -142,7 +138,6 @@ impl DataStore for SQLiteDataStore {
     conn.query_row("SELECT time, result_type, result_info FROM Logs WHERE id = ?", &[id as i64], row_to_check_log).map_err(DatabaseError::from_inner)?
   }
   fn search_log<'a>(&'a self, check: CheckId, search: LogFilter, order: LogOrder, mut each_fn: Box<dyn FnMut(CheckLogId, CheckLog) -> bool + 'a>) -> DataResult<()> {
-    use rusqlite::types::Value;
     let mut sql = String::from("SELECT time, result_type, result_info, id FROM Logs WHERE check_id = ?");
     let mut values: Vec<Value> = vec![Value::from(check)];
     if let Some(min_time) = search.min_time {
@@ -198,6 +193,91 @@ impl DataStore for SQLiteDataStore {
     Ok(())
   }
   fn count_logs(&self, check: CheckId, filter: LogFilter) -> DataResult<LogCounts> {
-    unimplemented!()
+    let conn = self.conn.lock().unwrap();
+    let conn = conn.borrow();
+    let mut stat = String::from("SELECT up_to, count_up, count_warn, count_error FROM LogCount WHERE check_id = ?");
+    let mut vals = vec![Value::from(check)];
+    if let Some(max_time) = filter.max_time {
+      stat.push_str(" AND up_to < ?");
+      vals.push(Value::from(time2int(max_time)));
+    }
+    if let Some(min_time) = filter.min_time {
+      stat.push_str(" AND up_to >= ?");
+      vals.push(Value::from(time2int(min_time)));
+    }
+    let base_stat = stat.clone();
+    stat.push_str(" ORDER BY up_to DESC LIMIT 1");
+    let mut stat = conn.prepare_cached(&stat).map_err(DatabaseError::from_inner)?;
+    let last: Option<(i64, i64, i64, i64)> = stat.query_row(&vals, |row| {
+      Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+    }).optional().map_err(DatabaseError::from_inner)?;
+    if last.is_none() {
+      return Self::select_count_logs(&*conn, check, filter.min_time.map(time2int), true, filter.max_time.map(time2int), false);
+    }
+    let (last_up_to, num_up, num_warn, num_error) = last.unwrap();
+    if filter.min_time.is_none() {
+      return Ok(LogCounts{num_up: num_up as u64, num_warn: num_warn as u64, num_error: num_error as u64} + Self::select_count_logs(&*conn, check, Some(last_up_to), false, filter.max_time.map(time2int), false)?);
+    }
+    let mut stat = base_stat;
+    stat.push_str(" ORDER BY up_to ASC LIMIT 1");
+    let mut stat = conn.prepare_cached(&stat).map_err(DatabaseError::from_inner)?;
+    let (first_up_to, first_num_up, first_num_warn, first_num_error): (i64, i64, i64, i64) = stat.query_row(&vals, |row| {
+      Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+    }).map_err(DatabaseError::from_inner)?;
+    if first_up_to == last_up_to {
+      return Self::select_count_logs(&*conn, check, filter.min_time.map(time2int), true, filter.max_time.map(time2int), false);
+    }
+    let mut res = LogCounts{
+      num_up: (num_up - first_num_up) as u64, num_warn: (num_warn - first_num_warn) as u64, num_error: (num_error - first_num_error) as u64,
+    };
+    res += Self::select_count_logs(&*conn, check, filter.min_time.map(time2int), true, Some(first_up_to), true)?;
+    res += Self::select_count_logs(&*conn, check, Some(last_up_to), false, filter.max_time.map(time2int), false)?;
+    Ok(res)
+  }
+}
+
+impl SQLiteDataStore {
+  fn select_count_logs(conn: &rusqlite::Connection, check: CheckId, from: Option<i64>, include_from: bool, to: Option<i64>, include_to: bool) -> DataResult<LogCounts> {
+    let mut stat = String::from("SELECT result_type, count() FROM Logs WHERE check_id = ?");
+    let mut vals = vec![Value::from(check)];
+    if let Some(from) = from {
+      stat.push_str(" AND time ");
+      if include_from {
+        stat.push_str(">=");
+      } else {
+        stat.push_str(">");
+      }
+      stat.push_str(" ?");
+      vals.push(Value::from(from));
+    }
+    if let Some(to) = to {
+      stat.push_str(" AND time ");
+      if include_to {
+        stat.push_str("<=");
+      } else {
+        stat.push_str("<");
+      }
+      stat.push_str(" ?");
+      vals.push(Value::from(to));
+    }
+    stat.push_str(" GROUP BY result_type");
+    let mut stat = conn.prepare_cached(&stat).map_err(DatabaseError::from_inner)?;
+    let mut num_up = 0u64;
+    let mut num_warn = 0u64;
+    let mut num_error = 0u64;
+    for r in stat.query_and_then(&vals, |row| {
+      let result_type: String = row.get(0)?;
+      let count: i64 = row.get(1)?;
+      match &result_type[..] {
+        "up" => num_up += count as u64,
+        "warn" => num_warn += count as u64,
+        "error" => num_error += count as u64,
+        _ => return Ok(Err(DatabaseError::from_static_str("Invalid enum value")))
+      }
+      Ok(Ok(()))
+    }).map_err(DatabaseError::from_inner)? {
+      (r: rusqlite::Result<DataResult<()>>).map_err(DatabaseError::from_inner)??;
+    }
+    Ok(LogCounts{num_up, num_warn, num_error})
   }
 }

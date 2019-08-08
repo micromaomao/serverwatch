@@ -23,6 +23,7 @@
     overflow: auto;
     overflow-y: scroll;
     -webkit-overflow-scrolling: touch;
+    margin-bottom: 0.5rem;
   }
   .l-up {
     color: var(--color-green);
@@ -42,6 +43,7 @@
     color: #444;
     border: solid 1px #aaa;
     padding: 0.5rem;
+    margin-top: 0.5rem;
     margin-bottom: 1rem;
   }
   .filter-control .filter-icon {
