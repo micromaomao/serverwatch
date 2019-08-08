@@ -15,7 +15,7 @@ pub fn init() -> SwState {
   let descs_list: Vec<&'static str> = checks_list.iter().map(|x| x.desc).collect();
   let checkids_list: Vec<datastores::CheckId> = checks_list.iter().map(|x| x.index).collect();
   let schd = Arc::new(SimpleSchd::new(checks_list.into_iter().map(|x| x.schd_check).collect()));
-  let data_store = Arc::new(datastores::sqlite::SQLiteDataStore::open("/tmp/test.db").unwrap());
+  let data_store = Arc::new(datastores::sqlite::SQLiteDataStore::open("./database.db").unwrap());
   for _ in 0..4 {
     let schd_ref = schd.clone();
     std::thread::spawn(move || {
