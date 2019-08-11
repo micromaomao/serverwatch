@@ -12,7 +12,7 @@
     dispatch('togglemore', {});
   }
 
-  $: last_check = (check.log.length > 0 ? check.log[check.log.length - 1] : null);
+  $: last_check = (check.log.length > 0 ? check.log[0] : null);
 </script>
 
 <style>
