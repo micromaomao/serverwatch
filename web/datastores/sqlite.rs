@@ -88,14 +88,14 @@ pub fn row_to_check_log(row: &rusqlite::Row) -> rusqlite::Result<DataResult<Chec
 }
 
 impl DataStore for SQLiteDataStore {
-  fn add_log(&self, check_id: CheckId, log: CheckLog) -> DataResult<CheckLogId> {
+  fn add_log_and_push<'a>(&self, check_id: CheckId, log: CheckLog, mut send_push: Box<dyn FnMut(String, Vec<u8>, Vec<u8>) + 'a>) -> DataResult<CheckLogId> {
     let now = log.time;
     let conn = self.conn.lock().unwrap();
     let mut conn = conn.borrow_mut();
     let mut tr = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e| DatabaseError::from_inner_and_str(e, "unable to start transaction"))?;
     tr.set_drop_behavior(rusqlite::DropBehavior::Rollback);
     tr.prepare_cached(r#"INSERT INTO Logs ("check_id", "time", "result_type", "result_info") VALUES (?, ?, ?, ?);"#).map_err(DatabaseError::from_inner)?
-      .execute(&[Value::from(check_id), Value::from(time2int(log.time)), Value::from(result_type_to_str(log.result.result_type).to_owned()), match log.result.info { Some(s) => Value::from(s), None => Value::Null }]).map_err(DatabaseError::from_inner)?;
+      .execute(&[Value::from(check_id), Value::from(time2int(log.time)), Value::from(result_type_to_str(log.result.result_type).to_owned()), match log.result.info { Some(ref s) => Value::from(s.to_owned()), None => Value::Null }]).map_err(DatabaseError::from_inner)?;
     let log_id = tr.last_insert_rowid() as u64;
     let last_counts: Option<(i64, i64, i64, SystemTime)> = tr.prepare_cached("SELECT count_up, count_warn, count_error, up_to FROM LogCount WHERE check_id = ? ORDER BY up_to DESC LIMIT 1").map_err(DatabaseError::from_inner)?.query_row(&[check_id],
           |row| {
@@ -128,6 +128,22 @@ impl DataStore for SQLiteDataStore {
       tr.prepare_cached(r#"INSERT INTO LogCount ("check_id", "up_to", "count_up", "count_warn", "count_error") VALUES (?, ?, ?, ?, ?);"#).map_err(DatabaseError::from_inner)?
         .execute(&[Value::from(check_id), Value::from(time2int(now)), Value::from(count_up), Value::from(count_warn), Value::from(count_error)]).map_err(|e| DatabaseError::from_inner_and_str(e, "unable to insert new counts"))?;
     }
+
+    if log.result.result_type != CheckResultType::UP {
+      tr.prepare_cached(r#"SELECT endpoint_url, auth, client_p256dh, notify_warn FROM pushSubscriptions WHERE check_id = ?"#).map_err(DatabaseError::from_inner)?
+        .query_and_then::<_, rusqlite::Error, _, _>(&[check_id], |row| {
+          let endpoint_url: String = row.get(0)?;
+          let auth: Vec<u8> = row.get(1)?;
+          let p256dh: Vec<u8> = row.get(2)?;
+          let notify_warn: bool = row.get(3)?;
+          if !notify_warn && log.result.result_type == CheckResultType::WARN {
+            return Ok(());
+          }
+          send_push(endpoint_url, auth, p256dh);
+          return Ok(());
+        }).map_err(DatabaseError::from_inner)?.count();
+    }
+
     tr.commit().map_err(|e| DatabaseError::from_inner_and_str(e, "unable to commit transaction"))?;
 
     Ok(log_id)
@@ -233,6 +249,26 @@ impl DataStore for SQLiteDataStore {
     res += Self::select_count_logs(&*conn, check, filter.min_time.map(time2int), true, Some(first_up_to), true)?;
     res += Self::select_count_logs(&*conn, check, Some(last_up_to), false, filter.max_time.map(time2int), false)?;
     Ok(res)
+  }
+
+  fn update_push_subscriptions(&self, endpoint_url: &str, auth: &[u8], client_p256dh: &[u8], list: &[PushSubscription]) -> DataResult<()> {
+    let conn = self.conn.lock().unwrap();
+    let mut conn = conn.borrow_mut();
+    let mut tr = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate).map_err(|e| DatabaseError::from_inner_and_str(e, "unable to start transaction"))?;
+    tr.set_drop_behavior(rusqlite::DropBehavior::Rollback);
+
+    tr.prepare_cached("DELETE FROM pushSubscriptions WHERE endpoint_url = ? AND auth = ?").map_err(DatabaseError::from_inner)?
+      .execute(&[Value::from(endpoint_url.to_owned()), Value::from(auth.to_owned())]).map_err(|e| DatabaseError::from_inner_and_str(e, "Unable to delete existing rows"))?;
+
+    let mut insert_stat = tr.prepare_cached(r#"INSERT INTO pushSubscriptions ("endpoint_url", "check_id", "auth", "client_p256dh", "notify_warn") VALUES (?, ?, ?, ?, ?);"#).map_err(DatabaseError::from_inner)?;
+    for sub in list {
+      insert_stat.execute(&[Value::from(endpoint_url.to_owned()), Value::from(sub.check_id), Value::from(auth.to_owned()), Value::from(client_p256dh.to_owned()), Value::from(sub.notify_warn)]).map_err(DatabaseError::from_inner)?;
+    }
+
+    std::mem::drop(insert_stat);
+    tr.commit().map_err(|e| DatabaseError::from_inner_and_str(e, "unable to commit transaction"))?;
+
+    Ok(())
   }
 }
 
