@@ -1,5 +1,6 @@
 document.body.innerHTML = '';
 
+import * as _ from './NotificationManager.js'
 import App from './App.svelte';
 
 const app = new App({

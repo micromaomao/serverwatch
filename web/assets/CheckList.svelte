@@ -11,6 +11,8 @@
     }
   }
 
+  export let editing_notifications;
+
 </script>
 
 <style>
@@ -23,6 +25,6 @@
 <ul>
   {#each checks as check}
     <CheckItem check={check} showing_more={showing_more_desc != null && check.desc == showing_more_desc}
-      on:togglemore="{e => handle_toggle_more(check.desc)}" />
+      on:togglemore="{e => handle_toggle_more(check.desc)}" editing_notifications={editing_notifications} />
   {/each}
 </ul>

@@ -122,11 +122,20 @@ pub enum LogOrder {
   TimeDesc,
 }
 
+pub struct PushSubscription {
+  pub check_id: CheckId,
+  pub notify_warn: bool,
+}
+
 pub trait DataStore: Send + Sync {
-  fn add_log(&self, check_id: CheckId, log: CheckLog) -> DataResult<CheckLogId>;
+  fn add_log(&self, check_id: CheckId, log: CheckLog) -> DataResult<CheckLogId> {
+    self.add_log_and_push(check_id, log, Box::new(|_, _, _| {}))
+  }
+  fn add_log_and_push<'a>(&self, check_id: CheckId, log: CheckLog, send_push: Box<dyn FnMut(String, Vec<u8>, Vec<u8>) + 'a>) -> DataResult<CheckLogId>;
   fn query_log(&self, id: CheckLogId) -> DataResult<CheckLog>;
   fn search_log<'a>(&'a self, check: CheckId, search: LogFilter, order: LogOrder, each_fn: Box<dyn FnMut(CheckLogId, CheckLog) -> bool + 'a>) -> DataResult<()>;
   fn count_logs(&self, check: CheckId, filter: LogFilter) -> DataResult<LogCounts>;
+  fn update_push_subscriptions(&self, endpoint_url: &str, auth: &[u8], client_p256dh: &[u8], list: &[PushSubscription]) -> DataResult<()>;
 }
 
 pub fn result_type_to_str(t: CheckResultType) -> &'static str {

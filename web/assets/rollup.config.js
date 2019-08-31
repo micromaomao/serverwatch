@@ -6,7 +6,7 @@ import { terser } from 'rollup-plugin-terser';
 
 const production = !process.env.ROLLUP_WATCH;
 
-export default {
+const main_bundle = {
 	input: 'main.js',
 	output: {
 		sourcemap: true,
@@ -48,3 +48,20 @@ export default {
 		clearScreen: false
 	}
 };
+
+const service_worker = {
+	input: 'sw-main.js',
+	output: {
+		sourcemap: true,
+		format: 'iife',
+		file: 'dist/sw.js',
+	},
+	plugins: [
+		production && terser()
+	],
+	watch: {
+		clearScreen: false
+	}
+}
+
+export default [main_bundle, service_worker];

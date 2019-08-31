@@ -73,7 +73,7 @@
 {#if log_showing.length > 0}
   <ul>
     {#each log_showing as l (l.id)}
-      <li class="l-{l.state}">{time_utc ? l.time.toISOString() : l.time.toLocaleTimeString()} ({reltime(l.time, $now)} ago): {l.state.toUpperCase()} {l.info}</li>
+      <li class="l-{l.state}">{time_utc ? l.time.toISOString() : l.time.toLocaleTimeString()} ({reltime(l.time, $now)}): {l.state.toUpperCase()} {l.info}</li>
     {/each}
   </ul>
 {:else}

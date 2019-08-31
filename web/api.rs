@@ -1,8 +1,9 @@
 use rocket_contrib::json::Json;
 use rocket::State;
 use super::serverwatch_state::SwState;
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use super::datastores;
+use super::push;
 
 #[derive(Serialize)]
 pub struct StatusLogResponse {
@@ -34,6 +35,33 @@ pub struct QuickStatistics {
 }
 
 use serverwatch::checkers::CheckResultType;
+
+use std::collections::HashMap;
+
+#[derive(Deserialize)]
+pub struct NotificationPost {
+	pub noti_state: HashMap<datastores::CheckId, NotificationItem>,
+	pub sub: PushSubscriptionJson
+}
+
+#[derive(Deserialize)]
+pub struct NotificationItem {
+	pub notify_warn: bool
+}
+
+#[allow(non_snake_case)]
+#[derive(Deserialize)]
+pub struct PushSubscriptionJson {
+	pub endpoint: String,
+	pub expirationTime: Option<u64>,
+	pub keys: PushSubscriptionKeysJson,
+}
+
+#[derive(Deserialize)]
+pub struct PushSubscriptionKeysJson {
+	pub auth: String,
+	pub p256dh: String,
+}
 
 pub fn result_type_to_string(r: CheckResultType) -> &'static str {
 	match r {
@@ -103,6 +131,35 @@ fn status_log(sw_state: State<SwState>) -> Result<Json<StatusLogResponse>, Strin
 	Ok(Json(get_status_log_response_struct(sw_state).map_err(|e| format!("Database error: {}", &e))?))
 }
 
+#[post("/notification", data = "<task>")]
+fn set_notification(sw_state: State<SwState>, task: Json<NotificationPost>) -> Result<rocket::Response, rocket::Response> {
+	let sub = &task.sub;
+	let endpoint_url = reqwest::Url::parse(&sub.endpoint).map_err(|_| rocket::Response::build().raw_status(400, "Invalid endpoint URL").finalize())?;
+	if endpoint_url.scheme() != "https" && endpoint_url.domain().unwrap() != "localhost" {
+		return Err(rocket::Response::build().raw_status(400, "https endpoint required").finalize());
+	}
+	let b64url = base64::Config::new(base64::CharacterSet::UrlSafe, false);
+	let auth = base64::decode_config(&sub.keys.auth, b64url.clone()).map_err(|_| rocket::Response::build().raw_status(400, "Unable to decode base64 in sub.keys.auth").finalize())?;
+	let p256dh = base64::decode_config(&sub.keys.p256dh, b64url.clone()).map_err(|_| rocket::Response::build().raw_status(400, "Unable to decode base64 in sub.keys.p256dh").finalize())?;
+	// use std::time;
+	// let timestamp = time::SystemTime::now().duration_since(time::UNIX_EPOCH).unwrap().as_millis();
+	// if let Err(errstr) = push::push(&sw_state.web_push_reqwest_client, &sw_state.app_server_key, endpoint_url.as_str(), &p256dh, &auth, format!("sample\n{}\nThis is what your notification will look like.\nNotifications will deliver even when the web page is closed.", timestamp).as_bytes(), std::time::Duration::from_secs(30)) {
+	// 	return Err(rocket::Response::build().raw_status(502, "Failed to send sample push message").sized_body(std::io::Cursor::new(errstr)).finalize());
+	// }
+	let mut sub_list = Vec::new();
+	sub_list.reserve_exact(task.noti_state.len());
+	for (check_id, nt_item) in task.noti_state.iter() {
+		sub_list.push(datastores::PushSubscription{
+			check_id: *check_id,
+			notify_warn: nt_item.notify_warn
+		});
+	}
+	if let Err(e) = sw_state.data_store.update_push_subscriptions(endpoint_url.as_str(), &auth, &p256dh, &sub_list) {
+		return Err(rocket::Response::build().status(rocket::http::Status::raw(500)).sized_body(std::io::Cursor::new(format!("{}", e))).finalize());
+	}
+	Ok(rocket::Response::build().raw_status(200, "Done").finalize())
+}
+
 pub fn api_routes() -> impl Into<Vec<rocket::Route>> {
-	routes![status_log]
+	routes![status_log, set_notification]
 }

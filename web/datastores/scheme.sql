@@ -33,3 +33,15 @@ CREATE UNIQUE INDEX "log_count_up_to_index" ON "LogCount" (
 	"check_id"	ASC,
 	"up_to"	ASC
 );
+
+CREATE TABLE "pushSubscriptions" (
+	"endpoint_url"	TEXT NOT NULL,
+	"check_id"	INTEGER NOT NULL,
+	"auth"	BLOB NOT NULL,
+	"client_p256dh"	INTEGER,
+	"notify_warn"	INTEGER NOT NULL
+);
+
+CREATE INDEX "push_subs_check_id" ON "pushSubscriptions" (
+	"check_id"	ASC
+);

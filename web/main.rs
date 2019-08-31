@@ -6,6 +6,7 @@ mod serverwatch_state;
 mod api;
 mod pages;
 mod datastores;
+mod push;
 
 use rocket_contrib::templates;
 use rocket_contrib::serve::{self, StaticFiles};
