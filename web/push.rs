@@ -122,3 +122,36 @@ fn hmac(key: &[u8], data: &[u8]) -> Result<Vec<u8>, openssl::error::ErrorStack> 
   signer.update(data)?;
   signer.sign_to_vec()
 }
+
+use serde::Deserialize;
+
+#[allow(non_snake_case)]
+#[derive(Deserialize)]
+pub struct PushSubscriptionJson {
+	pub endpoint: String,
+	pub expirationTime: Option<u64>,
+	pub keys: PushSubscriptionKeysJson,
+}
+
+#[derive(Deserialize)]
+pub struct PushSubscriptionKeysJson {
+	pub auth: String,
+	pub p256dh: String,
+}
+
+/// ## Return
+///
+/// `Ok((endpoint_url, auth, p256dh))` on success
+pub fn decode_sub_json(sub: &PushSubscriptionJson) -> Result<(String, Vec<u8>, Vec<u8>), &'static str> {
+	let endpoint_url = reqwest::Url::parse(&sub.endpoint).map_err(|_| "Invalid endpoint URL")?;
+	if endpoint_url.scheme() != "https" && endpoint_url.domain().unwrap() != "localhost" {
+    return Err("https endpoint required");
+	}
+	if endpoint_url.port_or_known_default() != Some(443) && endpoint_url.port() != Some(1001) {
+    return Err("Invalid push service port");
+	}
+	let b64url = base64::Config::new(base64::CharacterSet::UrlSafe, false);
+	let auth = base64::decode_config(&sub.keys.auth, b64url.clone()).map_err(|_| "Unable to decode base64 in sub.keys.auth")?;
+	let p256dh = base64::decode_config(&sub.keys.p256dh, b64url.clone()).map_err(|_| "Unable to decode base64 in sub.keys.p256dh")?;
+  return Ok((endpoint_url.as_str().to_owned(), auth, p256dh));
+}

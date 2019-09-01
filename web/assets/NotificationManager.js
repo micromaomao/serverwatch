@@ -63,3 +63,13 @@ export function ready() {
     }
   })
 }
+
+export async function push_test() {
+  if (!_canNotify) throw new Error("Notification module not initialized yet (or can't be initialized)");
+  let reg = await navigator.serviceWorker.ready;
+  if (reg.active) {
+    reg.active.postMessage({push_test: true});
+  } else {
+    return Promise.reject(new Error("Service worker not active, for some reason\u2026"));
+  }
+}

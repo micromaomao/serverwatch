@@ -16,6 +16,8 @@ self.addEventListener('message', ({data}) => {
       }
     })
     handle_notification_state_change(new_state).then(() => {}, err => {console.error(err)});
+  } else if (data.push_test) {
+    handle_push_test().then(() => {}, err => {console.error(err)});
   }
 });
 
@@ -53,6 +55,15 @@ async function handle_notification_state_change(new_state) {
   if (!new_has_noti) {
     await existing_sub.unsubscribe();
   }
+}
+
+async function handle_push_test() {
+  let push_manager = self.registration.pushManager;
+  let existing_sub = await push_manager.getSubscription();
+  if (!existing_sub) throw new Error("Not subscribed.");
+  await fetch('/api/notification/test', {method: 'POST', body: JSON.stringify({
+    sub: existing_sub.toJSON()
+  })});
 }
 
 self.addEventListener('push', evt => {

@@ -1,8 +1,9 @@
 use serverwatch::scheduler::simple_schd::SimpleSchd;
 use super::{checks, datastores, push::push};
 use datastores::DataStore;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, mpsc};
 use openssl::ec;
+use std::time;
 
 pub struct SwState {
   pub schd: Arc<SimpleSchd>,
@@ -11,7 +12,7 @@ pub struct SwState {
   pub data_store: Arc<dyn datastores::DataStore>,
   pub app_server_key: ec::EcKey<openssl::pkey::Private>,
   pub app_server_pub_key_b64: String,
-  pub web_push_reqwest_client: reqwest::Client,
+  pub push_queue: Mutex<mpsc::Sender<(String, Vec<u8>, Vec<u8>, String, time::Duration, String)>>,
 }
 
 pub fn init() -> SwState {
@@ -34,6 +35,7 @@ pub fn init() -> SwState {
     let checkids_list = checkids_list.clone();
     let data_store = data_store.clone();
     let descs_list = descs_list.clone();
+    let push_queue_send = push_queue_send.clone();
     std::thread::spawn(move || {
       loop {
         let mut logs = Vec::new();
@@ -49,13 +51,13 @@ pub fn init() -> SwState {
               }, Box::new(|endpoint_url: String, auth: Vec<u8>, p256dh: Vec<u8>| {
                   let mut push_body = String::new();
                   push_body.push_str(&format!("{}\n", check_id));
-                  push_body.push_str(&format!("{}\n", log.time.duration_since(std::time::UNIX_EPOCH).unwrap().as_millis()));
+                  push_body.push_str(&format!("{}\n", log.time.duration_since(time::UNIX_EPOCH).unwrap().as_millis()));
                   push_body.push_str(&format!("{:?} {:?}ed\n", desc, log.result.result_type));
                   push_body.push_str(match log.result.info {
                     Some(ref info) => info,
                     None => "(no info)"
                   });
-                  let _ = push_queue_send.send((endpoint_url, p256dh, auth, push_body, std::time::Duration::from_secs(24*60*60), format!("{}", check_id)));
+                  let _ = push_queue_send.send((endpoint_url, p256dh, auth, push_body, time::Duration::from_secs(24*60*60), format!("{}", check_id)));
                 })) {
                 if try_count < 100 {
                   try_count += 1;
@@ -97,7 +99,6 @@ pub fn init() -> SwState {
   let pub_key = app_server_key.public_key();
   let pub_key_bytes = pub_key.to_bytes(app_server_key.group(), openssl::ec::PointConversionForm::UNCOMPRESSED, &mut openssl::bn::BigNumContext::new().unwrap()).unwrap();
   let pub_key_b64 = base64::encode_config(&pub_key_bytes, base64::Config::new(base64::CharacterSet::UrlSafe, false));
-  let web_push_reqwest_client = reqwest::Client::new();
   SwState{
     schd,
     descs_list,
@@ -105,6 +106,6 @@ pub fn init() -> SwState {
     checkids_list,
     app_server_key,
     app_server_pub_key_b64: pub_key_b64,
-    web_push_reqwest_client,
+    push_queue: Mutex::new(push_queue_send),
   }
 }
