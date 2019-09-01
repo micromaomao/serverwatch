@@ -4,6 +4,7 @@ use super::serverwatch_state::SwState;
 use serde::{Serialize, Deserialize};
 use super::datastores;
 use super::push;
+use std::time;
 
 #[derive(Serialize)]
 pub struct StatusLogResponse {
@@ -41,7 +42,7 @@ use std::collections::HashMap;
 #[derive(Deserialize)]
 pub struct NotificationPost {
 	pub noti_state: HashMap<datastores::CheckId, NotificationItem>,
-	pub sub: PushSubscriptionJson
+	pub sub: push::PushSubscriptionJson
 }
 
 #[derive(Deserialize)]
@@ -49,18 +50,9 @@ pub struct NotificationItem {
 	pub notify_warn: bool
 }
 
-#[allow(non_snake_case)]
 #[derive(Deserialize)]
-pub struct PushSubscriptionJson {
-	pub endpoint: String,
-	pub expirationTime: Option<u64>,
-	pub keys: PushSubscriptionKeysJson,
-}
-
-#[derive(Deserialize)]
-pub struct PushSubscriptionKeysJson {
-	pub auth: String,
-	pub p256dh: String,
+pub struct PushTaskData {
+	pub sub: push::PushSubscriptionJson
 }
 
 pub fn result_type_to_string(r: CheckResultType) -> &'static str {
@@ -79,9 +71,9 @@ pub fn get_status_log_response_struct(sw_state: State<SwState>) -> Result<Status
 			"null"
 		}
 	}).collect();
-	let now = std::time::SystemTime::now();
+	let now = time::SystemTime::now();
 	use datastores::LogFilter;
-	use std::time::Duration;
+	use time::Duration;
 	let day = Duration::from_secs(24*60*60);
 	Ok(StatusLogResponse{
 		checks: {
@@ -100,7 +92,7 @@ pub fn get_status_log_response_struct(sw_state: State<SwState>) -> Result<Status
 									Some(s) => s,
 									None => "-".to_owned(),
 								},
-								time: log_entry.time.duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as u64,
+								time: log_entry.time.duration_since(time::UNIX_EPOCH).unwrap().as_millis() as u64,
 							});
 							true
 						}))?;
@@ -133,19 +125,16 @@ fn status_log(sw_state: State<SwState>) -> Result<Json<StatusLogResponse>, Strin
 
 #[post("/notification", data = "<task>")]
 fn set_notification(sw_state: State<SwState>, task: Json<NotificationPost>) -> Result<rocket::Response, rocket::Response> {
-	let sub = &task.sub;
-	let endpoint_url = reqwest::Url::parse(&sub.endpoint).map_err(|_| rocket::Response::build().raw_status(400, "Invalid endpoint URL").finalize())?;
-	if endpoint_url.scheme() != "https" && endpoint_url.domain().unwrap() != "localhost" {
-		return Err(rocket::Response::build().raw_status(400, "https endpoint required").finalize());
+	macro_rules! report_error {
+		($status_code:expr, $err_str:expr) => {
+			return Err(rocket::Response::build().status(rocket::http::Status::raw($status_code)).sized_body(std::io::Cursor::new($err_str.to_owned())).finalize());
+		};
 	}
-	let b64url = base64::Config::new(base64::CharacterSet::UrlSafe, false);
-	let auth = base64::decode_config(&sub.keys.auth, b64url.clone()).map_err(|_| rocket::Response::build().raw_status(400, "Unable to decode base64 in sub.keys.auth").finalize())?;
-	let p256dh = base64::decode_config(&sub.keys.p256dh, b64url.clone()).map_err(|_| rocket::Response::build().raw_status(400, "Unable to decode base64 in sub.keys.p256dh").finalize())?;
-	// use std::time;
-	// let timestamp = time::SystemTime::now().duration_since(time::UNIX_EPOCH).unwrap().as_millis();
-	// if let Err(errstr) = push::push(&sw_state.web_push_reqwest_client, &sw_state.app_server_key, endpoint_url.as_str(), &p256dh, &auth, format!("sample\n{}\nThis is what your notification will look like.\nNotifications will deliver even when the web page is closed.", timestamp).as_bytes(), std::time::Duration::from_secs(30)) {
-	// 	return Err(rocket::Response::build().raw_status(502, "Failed to send sample push message").sized_body(std::io::Cursor::new(errstr)).finalize());
-	// }
+	let (endpoint_url, auth, p256dh) = match push::decode_sub_json(&task.sub) {
+		Ok(k) => k,
+		Err(e) => report_error!(400, e)
+	};
+
 	let mut sub_list = Vec::new();
 	sub_list.reserve_exact(task.noti_state.len());
 	for (check_id, nt_item) in task.noti_state.iter() {
@@ -160,6 +149,21 @@ fn set_notification(sw_state: State<SwState>, task: Json<NotificationPost>) -> R
 	Ok(rocket::Response::build().raw_status(200, "Done").finalize())
 }
 
+#[post("/notification/test", data = "<push_test_data>")]
+fn push_test(sw_state: State<SwState>, push_test_data: Json<PushTaskData>) -> rocket::Response {
+	macro_rules! report_error {
+		($status_code:expr, $err_str:expr) => {
+			return rocket::Response::build().status(rocket::http::Status::raw($status_code)).sized_body(std::io::Cursor::new($err_str.to_owned())).finalize();
+		};
+	}
+	let (endpoint_url, auth, p256dh) = match push::decode_sub_json(&push_test_data.sub) {
+		Ok(k) => k,
+		Err(e) => report_error!(400, e)
+	};
+	sw_state.push_queue.lock().unwrap().send((endpoint_url, p256dh, auth, format!("push_test\n{}\nThis is what your notification will look like.\nNotifications will deliver even when this page is closed.", time::SystemTime::now().duration_since(time::UNIX_EPOCH).unwrap().as_millis()), time::Duration::from_secs(24*60*60), "push_test".to_owned()));
+	return rocket::Response::build().status(rocket::http::Status::raw(200)).finalize();
+}
+
 pub fn api_routes() -> impl Into<Vec<rocket::Route>> {
-	routes![status_log, set_notification]
+	routes![status_log, set_notification, push_test]
 }

@@ -2,7 +2,7 @@
 let check_state = JSON.parse(document.body.dataset.checkState);
 import CheckList from './CheckList.svelte';
 import { onMount, onDestroy } from 'svelte';
-import { notification_state, canNotify, ready as notification_ready, set_notification_state } from './NotificationManager.js';
+import { notification_state, canNotify, ready as notification_ready, set_notification_state, push_test } from './NotificationManager.js';
 let timeout_handle = null;
 let exited = false;
 const fetch_delay = 5000;
@@ -158,6 +158,12 @@ function enable_all () {
     &nbsp;
     {num_notification_triggers} notification{num_notification_triggers > 1 ? 's' : ''} set
     &nbsp;
+    {#if num_notification_triggers > 0}
+      <span class="noti-btn" on:click={push_test}>
+        test
+      </span>
+      &nbsp;
+    {/if}
     <span class="noti-btn" on:click={disable_all_notifications}>
       <span class="icon-">notifications_off</span> disable all
     </span>

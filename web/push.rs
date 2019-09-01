@@ -1,7 +1,7 @@
 use openssl::ec;
 use std::time;
 use reqwest;
-pub fn push(http_client: &reqwest::Client, server_key: &ec::EcKey<openssl::pkey::Private>, endpoint: &str, client_key_raw: &[u8], auth_secret: &[u8], push_body: &[u8], ttl: time::Duration) -> Result<(), String> {
+pub fn push(http_client: &reqwest::Client, server_key: &ec::EcKey<openssl::pkey::Private>, endpoint: &str, client_key_raw: &[u8], auth_secret: &[u8], push_body: &[u8], ttl: time::Duration, topic: Option<&str>) -> Result<(), String> {
   let endpoint_url = reqwest::Url::parse(endpoint).map_err(|e| format!("{}", e))?;
 
   let mut bnctx = openssl::bn::BigNumContext::new().map_err(|e| format!("{}", e))?;
@@ -56,11 +56,15 @@ pub fn push(http_client: &reqwest::Client, server_key: &ec::EcKey<openssl::pkey:
   let mut body_to_send = header_block;
   body_to_send.extend_from_slice(&ciphertext);
 
-  let mut res = http_client.post(endpoint_url)
+  let mut req = http_client.post(endpoint_url)
     .header("Content-Encoding", "aes128gcm")
     .header("Content-Type", "application/octet-stream")
     .header("Authorization", auth_header)
-    .header("TTL", format!("{}", ttl.as_secs()))
+    .header("TTL", format!("{}", ttl.as_secs()));
+  if let Some(topic) = topic {
+    req = req.header("Topic", topic);
+  }
+  let mut res = req
     .body(body_to_send)
     .send().map_err(|e| format!("while sending push request: {}", e))?;
 
@@ -117,4 +121,37 @@ fn hmac(key: &[u8], data: &[u8]) -> Result<Vec<u8>, openssl::error::ErrorStack> 
   let mut signer = openssl::sign::Signer::new(openssl::hash::MessageDigest::sha256(), &_pkey_hmac)?;
   signer.update(data)?;
   signer.sign_to_vec()
+}
+
+use serde::Deserialize;
+
+#[allow(non_snake_case)]
+#[derive(Deserialize)]
+pub struct PushSubscriptionJson {
+	pub endpoint: String,
+	pub expirationTime: Option<u64>,
+	pub keys: PushSubscriptionKeysJson,
+}
+
+#[derive(Deserialize)]
+pub struct PushSubscriptionKeysJson {
+	pub auth: String,
+	pub p256dh: String,
+}
+
+/// ## Return
+///
+/// `Ok((endpoint_url, auth, p256dh))` on success
+pub fn decode_sub_json(sub: &PushSubscriptionJson) -> Result<(String, Vec<u8>, Vec<u8>), &'static str> {
+	let endpoint_url = reqwest::Url::parse(&sub.endpoint).map_err(|_| "Invalid endpoint URL")?;
+	if endpoint_url.scheme() != "https" && endpoint_url.domain().unwrap() != "localhost" {
+    return Err("https endpoint required");
+	}
+	if endpoint_url.port_or_known_default() != Some(443) && endpoint_url.port() != Some(1001) {
+    return Err("Invalid push service port");
+	}
+	let b64url = base64::Config::new(base64::CharacterSet::UrlSafe, false);
+	let auth = base64::decode_config(&sub.keys.auth, b64url.clone()).map_err(|_| "Unable to decode base64 in sub.keys.auth")?;
+	let p256dh = base64::decode_config(&sub.keys.p256dh, b64url.clone()).map_err(|_| "Unable to decode base64 in sub.keys.p256dh")?;
+  return Ok((endpoint_url.as_str().to_owned(), auth, p256dh));
 }
