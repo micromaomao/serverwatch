@@ -6,17 +6,17 @@ self.addEventListener('install', evt => {
 self.addEventListener('activate', evt => {
   self.clients.claim();
   console.log(`Activated service worker v${sw_version}`);
-  self.addEventListener('message', ({data}) => {
-    if (data.update_notification_state) {
-      let new_state = data.update_notification_state;
-      self.clients.matchAll({includeUncontrolled: true, type: 'window'}).then(clients => {
-        for (let c of clients) {
-          c.postMessage({update_notification_state: new_state})
-        }
-      })
-      handle_notification_state_change(new_state).then(() => {}, err => {console.error(err)});
-    }
-  });
+});
+self.addEventListener('message', ({data}) => {
+  if (data.update_notification_state) {
+    let new_state = data.update_notification_state;
+    self.clients.matchAll({includeUncontrolled: true, type: 'window'}).then(clients => {
+      for (let c of clients) {
+        c.postMessage({update_notification_state: new_state})
+      }
+    })
+    handle_notification_state_change(new_state).then(() => {}, err => {console.error(err)});
+  }
 });
 
 let server_key = fetch('/application_server_key.base64', {method: 'GET'}).then(x => x.text())
