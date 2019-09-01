@@ -13,7 +13,6 @@ export let notification_state = writable({});
      }
 */
 notification_state.subscribe(val => _notification_state = val);
-let serviceworker_reg = null;
 
 if (!('serviceWorker' in window.navigator)) {
   console.log("Service worker not supported by browser.");
@@ -29,7 +28,6 @@ function init() {
   navigator.serviceWorker.register('/sw.js', {
     scope: '/',
   }).then(swr => {
-    serviceworker_reg = swr;
     let state_from_local_storage = JSON.parse(localStorage.getItem("notification_state"));
     if (state_from_local_storage) {
       notification_state.set(state_from_local_storage);
@@ -44,10 +42,11 @@ function init() {
   });
 }
 
-export function set_notification_state(new_state) {
-  if (!_canNotify) return Promise.reject(new Error("Notification module not initialized yet (or can't be initialized)"));
-  if (serviceworker_reg.active) {
-    serviceworker_reg.active.postMessage({update_notification_state: new_state});
+export async function set_notification_state(new_state) {
+  if (!_canNotify) throw new Error("Notification module not initialized yet (or can't be initialized)");
+  let reg = await navigator.serviceWorker.ready;
+  if (reg.active) {
+    reg.active.postMessage({update_notification_state: new_state});
     localStorage.setItem('notification_state', JSON.stringify(new_state));
   } else {
     return Promise.reject(new Error("Service worker not active, for some reason\u2026"));

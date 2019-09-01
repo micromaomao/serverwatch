@@ -2,7 +2,7 @@
 let check_state = JSON.parse(document.body.dataset.checkState);
 import CheckList from './CheckList.svelte';
 import { onMount, onDestroy } from 'svelte';
-import { notification_state, canNotify, ready as notification_ready, set_notification_state, show_sample as notification_show_sample } from './NotificationManager.js';
+import { notification_state, canNotify, ready as notification_ready, set_notification_state } from './NotificationManager.js';
 let timeout_handle = null;
 let exited = false;
 const fetch_delay = 5000;
