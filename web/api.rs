@@ -133,17 +133,32 @@ fn status_log(sw_state: State<SwState>) -> Result<Json<StatusLogResponse>, Strin
 
 #[post("/notification", data = "<task>")]
 fn set_notification(sw_state: State<SwState>, task: Json<NotificationPost>) -> Result<rocket::Response, rocket::Response> {
+	macro_rules! report_error {
+		($status_code:expr, $err_str:expr) => {
+			return Err(rocket::Response::build().status(rocket::http::Status::raw($status_code)).sized_body(std::io::Cursor::new($err_str.to_owned())).finalize());
+		};
+	}
+
 	let sub = &task.sub;
-	let endpoint_url = reqwest::Url::parse(&sub.endpoint).map_err(|_| rocket::Response::build().raw_status(400, "Invalid endpoint URL").finalize())?;
+	let endpoint_url = match reqwest::Url::parse(&sub.endpoint) {
+		Ok(u) => u,
+		Err(_) => report_error!(400, "Invalid endpoint URL")
+	};
 	if endpoint_url.scheme() != "https" && endpoint_url.domain().unwrap() != "localhost" {
-		return Err(rocket::Response::build().raw_status(400, "https endpoint required").finalize());
+		report_error!(400, "https endpoint required");
 	}
 	if endpoint_url.port_or_known_default() != Some(443) && endpoint_url.port() != Some(1001) {
-		return Err(rocket::Response::build().raw_status(400, "Invalid push service port").finalize());
+		report_error!(400, "Invalid push service port");
 	}
 	let b64url = base64::Config::new(base64::CharacterSet::UrlSafe, false);
-	let auth = base64::decode_config(&sub.keys.auth, b64url.clone()).map_err(|_| rocket::Response::build().raw_status(400, "Unable to decode base64 in sub.keys.auth").finalize())?;
-	let p256dh = base64::decode_config(&sub.keys.p256dh, b64url.clone()).map_err(|_| rocket::Response::build().raw_status(400, "Unable to decode base64 in sub.keys.p256dh").finalize())?;
+	let auth = match base64::decode_config(&sub.keys.auth, b64url.clone()) {
+		Ok(k) => k,
+		Err(_) => report_error!(400, "Unable to decode base64 in sub.keys.auth")
+	};
+	let p256dh = match base64::decode_config(&sub.keys.p256dh, b64url.clone()) {
+		Ok(k) => k,
+		Err(_) => report_error!(400, "Unable to decode base64 in sub.keys.p256dh")
+	};
 	let mut sub_list = Vec::new();
 	sub_list.reserve_exact(task.noti_state.len());
 	for (check_id, nt_item) in task.noti_state.iter() {
