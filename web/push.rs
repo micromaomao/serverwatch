@@ -1,7 +1,7 @@
 use openssl::ec;
 use std::time;
 use reqwest;
-pub fn push(http_client: &reqwest::Client, server_key: &ec::EcKey<openssl::pkey::Private>, endpoint: &str, client_key_raw: &[u8], auth_secret: &[u8], push_body: &[u8], ttl: time::Duration) -> Result<(), String> {
+pub fn push(http_client: &reqwest::Client, server_key: &ec::EcKey<openssl::pkey::Private>, endpoint: &str, client_key_raw: &[u8], auth_secret: &[u8], push_body: &[u8], ttl: time::Duration, topic: Option<&str>) -> Result<(), String> {
   let endpoint_url = reqwest::Url::parse(endpoint).map_err(|e| format!("{}", e))?;
 
   let mut bnctx = openssl::bn::BigNumContext::new().map_err(|e| format!("{}", e))?;
@@ -56,11 +56,15 @@ pub fn push(http_client: &reqwest::Client, server_key: &ec::EcKey<openssl::pkey:
   let mut body_to_send = header_block;
   body_to_send.extend_from_slice(&ciphertext);
 
-  let mut res = http_client.post(endpoint_url)
+  let mut req = http_client.post(endpoint_url)
     .header("Content-Encoding", "aes128gcm")
     .header("Content-Type", "application/octet-stream")
     .header("Authorization", auth_header)
-    .header("TTL", format!("{}", ttl.as_secs()))
+    .header("TTL", format!("{}", ttl.as_secs()));
+  if let Some(topic) = topic {
+    req = req.header("Topic", topic);
+  }
+  let mut res = req
     .body(body_to_send)
     .send().map_err(|e| format!("while sending push request: {}", e))?;
 

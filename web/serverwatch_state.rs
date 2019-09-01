@@ -55,7 +55,7 @@ pub fn init() -> SwState {
                     Some(ref info) => info,
                     None => "(no info)"
                   });
-                  let _ = push_queue_send.send((endpoint_url, p256dh, auth, push_body, std::time::Duration::from_secs(24*60*60)));
+                  let _ = push_queue_send.send((endpoint_url, p256dh, auth, push_body, std::time::Duration::from_secs(24*60*60), format!("{}", check_id)));
                 })) {
                 if try_count < 100 {
                   try_count += 1;
@@ -85,7 +85,7 @@ pub fn init() -> SwState {
           Ok(t) => t,
           Err(_) => return,
         };
-        if let Err(e) = push(&push_http_client, &app_server_key, &task.0, &task.1, &task.2, task.3.as_bytes(), task.4) {
+        if let Err(e) = push(&push_http_client, &app_server_key, &task.0, &task.1, &task.2, task.3.as_bytes(), task.4, Some(&task.5)) {
           eprint!("Push error: endpoint={}: {}", &task.0, &e);
           if e.starts_with("Push endpoint responsed with") {
             let _ = data_store.update_push_subscriptions(&task.0, &task.2, &task.1, &[]);
