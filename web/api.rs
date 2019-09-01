@@ -138,14 +138,12 @@ fn set_notification(sw_state: State<SwState>, task: Json<NotificationPost>) -> R
 	if endpoint_url.scheme() != "https" && endpoint_url.domain().unwrap() != "localhost" {
 		return Err(rocket::Response::build().raw_status(400, "https endpoint required").finalize());
 	}
+	if endpoint_url.port_or_known_default() != Some(443) && endpoint_url.port() != Some(1001) {
+		return Err(rocket::Response::build().raw_status(400, "Invalid push service port").finalize());
+	}
 	let b64url = base64::Config::new(base64::CharacterSet::UrlSafe, false);
 	let auth = base64::decode_config(&sub.keys.auth, b64url.clone()).map_err(|_| rocket::Response::build().raw_status(400, "Unable to decode base64 in sub.keys.auth").finalize())?;
 	let p256dh = base64::decode_config(&sub.keys.p256dh, b64url.clone()).map_err(|_| rocket::Response::build().raw_status(400, "Unable to decode base64 in sub.keys.p256dh").finalize())?;
-	// use std::time;
-	// let timestamp = time::SystemTime::now().duration_since(time::UNIX_EPOCH).unwrap().as_millis();
-	// if let Err(errstr) = push::push(&sw_state.web_push_reqwest_client, &sw_state.app_server_key, endpoint_url.as_str(), &p256dh, &auth, format!("sample\n{}\nThis is what your notification will look like.\nNotifications will deliver even when the web page is closed.", timestamp).as_bytes(), std::time::Duration::from_secs(30)) {
-	// 	return Err(rocket::Response::build().raw_status(502, "Failed to send sample push message").sized_body(std::io::Cursor::new(errstr)).finalize());
-	// }
 	let mut sub_list = Vec::new();
 	sub_list.reserve_exact(task.noti_state.len());
 	for (check_id, nt_item) in task.noti_state.iter() {
