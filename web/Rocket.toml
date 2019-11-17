@@ -2,3 +2,8 @@
 address = "localhost"
 port = 8080
 log = "normal"
+
+[production]
+address = "localhost"
+port = 8001
+log = "critical"
