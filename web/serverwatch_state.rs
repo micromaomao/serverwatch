@@ -89,9 +89,9 @@ pub fn init() -> SwState {
         };
         if let Err(e) = push(&push_http_client, &app_server_key, &task.0, &task.1, &task.2, task.3.as_bytes(), task.4, Some(&task.5)) {
           eprintln!("Push error: endpoint={}: {}", &task.0, &e);
-          if e.starts_with("Push endpoint responsed with") {
-            let _ = data_store.update_push_subscriptions(&task.0, &task.2, &task.1, &[]);
-          }
+          // if e.starts_with("Push endpoint responsed with") {
+          //   let _ = data_store.update_push_subscriptions(&task.0, &task.2, &task.1, &[]);
+          // }
         }
       }
     });
