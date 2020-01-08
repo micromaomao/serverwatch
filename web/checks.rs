@@ -88,7 +88,7 @@ pub fn get_checks() -> Vec<Check> {
     c.expect_response_contains("Hello. This is Zone API v1.");
     Box::new(c)
   });
-  tls!(         (8<<4) + 1, "TLS zone-staging.maowtm.org");
+  tls!(         (8<<4) + 1, "zone-staging.maowtm.org");
 
   list
 }
