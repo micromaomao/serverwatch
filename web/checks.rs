@@ -81,6 +81,14 @@ pub fn get_checks() -> Vec<Check> {
     c.expect_response_contains(r#"{"response":"text","list""#);
     Box::new(c)
   });
+  add_check!(   8<<4, "HTTPS zone-staging.maowtm.org", Duration::from_secs(120), {
+    let mut c = HttpChecker::new("https://zone-staging.maowtm.org/api/v1").unwrap();
+    c.set_timeouts(Duration::from_secs(2), Duration::from_secs(5));
+    c.expect_200();
+    c.expect_response_contains("Hello. This is Zone API v1.");
+    Box::new(c)
+  });
+  tls!(         (8<<4) + 1, "TLS zone-staging.maowtm.org");
 
   list
 }
