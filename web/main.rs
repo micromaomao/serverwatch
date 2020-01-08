@@ -11,7 +11,12 @@ mod push;
 use rocket_contrib::templates;
 use rocket_contrib::serve::{self, StaticFiles};
 
+use std::fs;
+
 fn main() {
+  if !fs::metadata("Rocket.toml").expect("could not find Rocket.toml in cwd. Make sure cargo run is run with cwd = serverwatch/web.").is_file() {
+    panic!("Rocket.toml is not a file.");
+  }
   rocket::ignite()
     .manage(serverwatch_state::init())
     .attach(templates::Template::fairing())
